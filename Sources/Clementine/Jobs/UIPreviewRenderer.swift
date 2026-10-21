@@ -77,6 +77,35 @@ enum UIPreview {
             snapshotWindow(NSHostingController(rootView: OnboardingView(initialStep: page, live: false)),
                            appearance: appearance, settle: 1.2, to: out("onboarding-\(page + 1)"))
         }
+        renderProductivity(appearance: appearance, out: out)
+    }
+
+    /// Undo on finished cards, and Settings › Wheel.
+    private static func renderProductivity(appearance: NSAppearance, out: (String) -> URL) {
+        let offer = RunningJob(title: "Convert to JPG", symbol: "arrow.triangle.2.circlepath", detail: "12 of 12 done")
+        offer.progress = 1
+        offer.state = .done
+        offer.undo = {}
+        let undone = RunningJob(title: "Compress", symbol: "arrow.down.right.and.arrow.up.left", detail: "Moved 3 items to the Trash")
+        undone.progress = 1
+        undone.state = .done
+        undone.undo = {}
+        undone.undone = true
+        let partial = RunningJob(title: "Convert to WebP", symbol: "arrow.triangle.2.circlepath", detail: "9 of 10 done")
+        partial.state = .failed("broken.png: Couldn't read broken.png.")
+        partial.undo = {}
+        let cards = VStack(spacing: 14) {
+            ForEach([offer, undone, partial], id: \.detail) { job in
+                JobView(job: job, cancel: {}, dismiss: {}).shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+            }
+        }
+        .padding(28)
+        .background(LinearGradient(colors: [Color(hex: 0x6E8CA8), Color(hex: 0xB59BC4)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        snapshot(NSHostingView(rootView: cards), appearance: appearance, to: out("progress-undo"))
+
+        snapshotWindow(NSHostingController(rootView: SettingsView(tab: .wheel)), appearance: appearance, settle: 1.6, to: out("settings-wheel"))
+        let tools = WheelSettingsView(kind: "audio", mode: .tools).frame(width: 520).background(WindowBackdrop()).tint(Theme.tangerine)
+        snapshotWindow(NSHostingController(rootView: tools), appearance: appearance, settle: 1.6, to: out("settings-wheel-tools"))
     }
 
     /// Draws a view hierarchy into a PNG.

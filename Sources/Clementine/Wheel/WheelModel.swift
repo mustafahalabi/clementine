@@ -13,6 +13,9 @@ final class WheelModel: ObservableObject {
     @Published var visible = false
     /// Bumped on every show so the slices re-run their fan-in animation (the window is reused).
     @Published private(set) var session = 0
+    /// Click mode (Services menu, Open Files…): hover and click instead of drag and drop. The mode chip becomes a switch.
+    @Published var interactive = false
+    @Published var chipHovered = false
 
     let innerRadius: CGFloat = 60
 
@@ -55,6 +58,24 @@ final class WheelModel: ObservableObject {
             hovered = nil
             actions = ActionRegistry.actions(for: urls, mode: mode)
         }
+    }
+
+    /// Shows a fixed set of slices around a file-type icon, for the live preview in Settings.
+    /// A new `session` replays the fan-in; otherwise slices that appear simply join the ring.
+    func preview(actions: [Action], mode: WheelMode, icon: NSImage, summary: String, replay: Bool) {
+        if replay { session += 1 }
+        self.mode = mode
+        self.actions = actions
+        self.summary = summary
+        thumbnail = icon
+        hovered = nil
+        visible = true
+    }
+
+    /// Whether `point` (view coordinates, y up) is on the mode chip under the ring.
+    func chipContains(_ point: CGPoint, in size: CGSize) -> Bool {
+        let chip = CGPoint(x: size.width / 2, y: size.height / 2 - (outerRadius + 24))
+        return abs(point.x - chip.x) <= 56 && abs(point.y - chip.y) <= 13
     }
 
     /// The slice under `point` (view coordinates, y up), or nil for the center and outside.

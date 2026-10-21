@@ -90,6 +90,8 @@ struct Action: Identifiable {
     var minInputs = 1
     /// Run once with every dropped file instead of once per file.
     var batch = false
+    /// How many files of a multi-file drop may run at once. nil picks from the file kinds (see `BatchRunner.limit`).
+    var maxConcurrent: Int? = nil
     var parameters: [Parameter] = []
     /// Live preview for the parameter sheet (single image inputs).
     var preview: ((URL, ParamValues) async -> NSImage?)? = nil
@@ -116,8 +118,16 @@ enum ActionRegistry {
         all.first { $0.id == id }
     }
 
-    /// The slices to show for these files, at most 12 so labels stay readable.
+    /// The slices to show for these files: visible candidates, most used first, at most 12 so labels stay readable.
     static func actions(for urls: [URL], mode: WheelMode) -> [Action] {
+        let hidden = HiddenActions.ids
+        let visible = candidates(for: urls, mode: mode).filter { !hidden.contains($0.id) }
+        let arranged = ActionUsage.arrange(visible, bucket: ActionUsage.bucket(for: urls.map(FileItem.init), mode: mode))
+        return Array(arranged.prefix(12))
+    }
+
+    /// Every action that applies to these files, in catalog order, hidden ones included.
+    static func candidates(for urls: [URL], mode: WheelMode) -> [Action] {
         let items = urls.map(FileItem.init)
         guard !items.isEmpty else { return [] }
         let candidates = mode == .convert ? ConvertActions.all : ToolActions.all
@@ -128,6 +138,6 @@ enum ActionRegistry {
         if mode == .convert && (result.isEmpty || items.allSatisfy({ $0.kind == .folder || $0.kind == .other })) {
             result += ConvertActions.archiveCreate
         }
-        return Array(result.prefix(12))
+        return result
     }
 }

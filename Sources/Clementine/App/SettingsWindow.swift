@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 enum SettingsWindow {
     private static var window: FocusablePanel?
+    private static let anchor = TopAnchor()
 
     static func show() {
         if window == nil {
@@ -14,13 +15,40 @@ enum SettingsWindow {
             host.sizingOptions = .preferredContentSize
             window.contentViewController = host
             window.center()
+            window.delegate = anchor
             self.window = window
         }
         window?.present()
     }
 }
 
+/// Keeps the window's top edge still when switching tabs changes its height, as macOS settings windows do.
+private final class TopAnchor: NSObject, NSWindowDelegate {
+    private var top: CGFloat?
+
+    func windowDidResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        if let top, window.isVisible, abs(window.frame.maxY - top) > 0.5 {
+            window.setFrameOrigin(NSPoint(x: window.frame.minX, y: top - window.frame.height))
+        }
+        top = window.frame.maxY
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        top = (notification.object as? NSWindow)?.frame.maxY
+    }
+}
+
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case general = "General"
+    case wheel = "Wheel"
+
+    var id: Self { self }
+    var symbol: String { self == .general ? "gearshape" : "chart.pie" }
+}
+
 struct SettingsView: View {
+    @State private var tab: SettingsTab
     @AppStorage(Prefs.enabledKey) private var enabled = true
     @AppStorage(Prefs.revealKey) private var reveal = true
     @AppStorage(Prefs.qualityKey) private var quality = 0.85
@@ -28,14 +56,23 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
 
+    init(tab: SettingsTab = .general) {
+        _tab = State(initialValue: tab)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             AppHeader()
                 .padding(.horizontal, 22)
                 .padding(.top, 6)
-            form
+            SettingsTabs(selection: $tab)
+                .padding(.top, 14)
+            switch tab {
+            case .general: form
+            case .wheel: WheelSettingsView()
+            }
         }
-        .frame(width: 480)
+        .frame(width: 520)
         .background(WindowBackdrop())
         .tint(Theme.tangerine)
     }
@@ -97,6 +134,41 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .scrollDisabled(true)
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Two pill tabs under the header; the selected one slides between them.
+private struct SettingsTabs: View {
+    @Binding var selection: SettingsTab
+    @Namespace private var lens
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(SettingsTab.allCases) { tab in
+                let selected = tab == selection
+                Button { withAnimation(Theme.spring) { selection = tab } } label: {
+                    Label(tab.rawValue, systemImage: tab.symbol)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(selected ? Color.white : Theme.secondaryText(scheme))
+                        .padding(.horizontal, 14)
+                        .frame(height: 26)
+                        .background {
+                            if selected {
+                                Capsule().fill(Theme.accent)
+                                    .shadow(color: Theme.glow, radius: 5, y: 2)
+                                    .matchedGeometryEffect(id: "tab", in: lens)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.primary.opacity(scheme == .dark ? 0.07 : 0.05)))
+        .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1))
     }
 }
 

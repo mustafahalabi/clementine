@@ -11,6 +11,10 @@ struct WheelView: View {
             if model.actions.isEmpty {
                 EmptyNotice(mode: model.mode)
                     .offset(y: model.innerRadius + 26)
+                if model.interactive {
+                    ModeChip(mode: model.mode, switchable: true, hovered: model.chipHovered)
+                        .offset(y: outer + 24)
+                }
             } else {
                 Backdrop(radius: outer + 8)
                 Ring(model: model, size: size)
@@ -18,7 +22,7 @@ struct WheelView: View {
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.86).combined(with: .opacity),
                         removal: .scale(scale: 1.08).combined(with: .opacity)))
-                ModeChip(mode: model.mode)
+                ModeChip(mode: model.mode, switchable: model.interactive, hovered: model.chipHovered)
                     .offset(y: outer + 24)
             }
             Hub(model: model)
@@ -270,21 +274,35 @@ private struct Hub: View {
     }
 }
 
-/// Says which wheel is up, under the ring.
+/// Says which wheel is up, under the ring. In click mode it's also the switch to the other wheel (or Tab).
 private struct ModeChip: View {
     let mode: WheelMode
+    var switchable = false
+    var hovered = false
 
     var body: some View {
-        Label(mode == .convert ? "CONVERT" : "TOOLS",
-              systemImage: mode == .convert ? "arrow.triangle.2.circlepath" : "wand.and.stars")
-            .font(.system(size: 9.5, weight: .heavy, design: .rounded))
-            .tracking(0.8)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(Theme.accent, in: Capsule())
-            .shadow(color: Theme.glow, radius: 6, y: 2)
-            .contentTransition(.interpolate)
+        HStack(spacing: 6) {
+            Label(mode == .convert ? "CONVERT" : "TOOLS",
+                  systemImage: mode == .convert ? "arrow.triangle.2.circlepath" : "wand.and.stars")
+            if switchable {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 8, weight: .black))
+                    .opacity(hovered ? 1 : 0.7)
+                    .padding(.leading, 5)
+                    .overlay(alignment: .leading) { Rectangle().fill(.white.opacity(0.35)).frame(width: 0.75, height: 10) }
+            }
+        }
+        .font(.system(size: 9.5, weight: .heavy, design: .rounded))
+        .tracking(0.8)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Theme.accent, in: Capsule())
+        .overlay(Capsule().fill(.white.opacity(hovered ? 0.16 : 0)))
+        .shadow(color: Theme.glow.opacity(hovered ? 1 : 0.8), radius: hovered ? 9 : 6, y: 2)
+        .scaleEffect(hovered ? 1.06 : 1)
+        .contentTransition(.interpolate)
+        .animation(Theme.snappy, value: hovered)
     }
 }
 

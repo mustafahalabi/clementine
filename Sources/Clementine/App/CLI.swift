@@ -6,8 +6,9 @@ import SwiftUI
 ///     Clementine --list photo.heic
 ///     Clementine --run convert.image.png photo.heic
 ///     Clementine --run tool.fit --set megabytes=1.5 photo.heic
+///     Clementine --history
 enum CLI {
-    static let commands: Set = ["--list", "--run", "--render-wheel", "--help"]
+    static let commands: Set = ["--list", "--run", "--render-wheel", "--history", "--undo", "--clear-history", "--help"]
 
     static func run(_ arguments: [String]) -> Never {
         _ = NSApplication.shared
@@ -22,7 +23,12 @@ enum CLI {
 
     private static let usage = """
         usage: Clementine --list <file>...
-               Clementine --run <action-id> [--set key=value]... <file>...
+               Clementine --run <action-id> [--set key=value]... [--record] <file>...
+               Clementine --history | --undo | --clear-history
+
+        --list shows each wheel as it would appear (most used first, hidden slices marked).
+        --run processes several files in parallel, like the app. --record also logs usage and history.
+        --undo moves the newest history entry's outputs to the Trash.
         """
 
     private static func execute(_ arguments: [String]) async -> Int32 {
@@ -33,8 +39,13 @@ enum CLI {
             guard !urls.isEmpty else { print(usage); return 2 }
             for (mode, name) in [(WheelMode.convert, "Convert (⇧)"), (.tools, "Tools (⌥⇧)")] {
                 print(name)
-                for action in ActionRegistry.actions(for: urls, mode: mode) {
+                let shown = ActionRegistry.actions(for: urls, mode: mode)
+                let hidden = HiddenActions.ids
+                for action in shown {
                     print("  \(action.id.padding(toLength: 28, withPad: " ", startingAt: 0)) \(action.title)")
+                }
+                for action in ActionRegistry.candidates(for: urls, mode: mode) where hidden.contains(action.id) {
+                    print("  \(action.id.padding(toLength: 28, withPad: " ", startingAt: 0)) \(action.title)  (hidden)")
                 }
             }
             return 0
@@ -46,9 +57,12 @@ enum CLI {
             }
             var params = action.defaults
             var files: [URL] = []
+            var record = false
             while !arguments.isEmpty {
                 let argument = arguments.removeFirst()
-                if argument == "--set", !arguments.isEmpty {
+                if argument == "--record" {
+                    record = true
+                } else if argument == "--set", !arguments.isEmpty {
                     let pair = arguments.removeFirst().split(separator: "=", maxSplits: 1).map(String.init)
                     guard pair.count == 2, let parameter = action.parameters.first(where: { $0.key == pair[0] }) else {
                         fputs("unknown parameter \(pair[0]) for \(action.id)\n", stderr)
@@ -70,23 +84,56 @@ enum CLI {
                 return 2
             }
 
-            var failed = false
-            for unit in action.batch ? [files] : files.map({ [$0] }) {
-                do {
-                    switch try await action.run(JobContext(inputs: unit, params: params, progress: { _ in })) {
-                    case .files(let outputs): outputs.forEach { print($0.path) }
-                    case .text(let title, let body): print("== \(title) ==\n\(body)")
-                    }
-                } catch {
+            // Same parallel path as the app; results are printed in input order once everything has finished.
+            let report = await BatchRunner.run(action, urls: files, params: params)
+            for (unit, result) in report.outcomes {
+                switch result {
+                case .success(.files(let outputs)): outputs.forEach { print($0.path) }
+                case .success(.text(let title, let body)): print("== \(title) ==\n\(body)")
+                case .failure(let error):
+                    fflush(stdout)
                     fputs("error: \(unit[0].lastPathComponent): \(error.localizedDescription)\n", stderr)
-                    failed = true
                 }
             }
-            return failed ? 1 : 0
+            if record {
+                let files = files
+                await MainActor.run {
+                    ActionUsage.record(action, urls: files)
+                    if !report.files.isEmpty { HistoryStore.shared.record(action, inputs: files, outputs: report.files) }
+                }
+            }
+            return report.failures.isEmpty ? 0 : 1
+
+        case "--history":
+            let entries = await MainActor.run { HistoryStore.shared.entries }
+            let formatter = ISO8601DateFormatter()
+            for entry in entries {
+                print("\(formatter.string(from: entry.date))\t\(entry.actionID)\t\(entry.title)\t\(entry.inputs.joined(separator: "|"))\t\(entry.outputs.joined(separator: "|"))")
+            }
+            return 0
+
+        case "--undo":
+            return await MainActor.run {
+                guard let entry = HistoryStore.shared.undoable else {
+                    fputs("nothing to undo\n", stderr)
+                    return 1
+                }
+                do {
+                    for location in try HistoryStore.shared.undo(entry) { print(location.path) }
+                    return 0
+                } catch {
+                    fputs("error: \(error.localizedDescription)\n", stderr)
+                    return 1
+                }
+            }
+
+        case "--clear-history":
+            await MainActor.run { HistoryStore.shared.clear() }
+            return 0
 
         case "--render-wheel":
             // Dev aid: draws the wheel to a PNG (materials render flat).
-            // --render-wheel out.png [--tools] [--hover N] [--light] file…
+            // --render-wheel out.png [--tools] [--hover N] [--light] [--click [--chip]] file…
             guard arguments.count >= 2 else { print(usage); return 2 }
             let output = fileURL(arguments.removeFirst())
             let mode: WheelMode = arguments.contains("--tools") ? .tools : .convert
@@ -95,7 +142,9 @@ enum CLI {
             let files = arguments.enumerated().filter { index, argument in
                 !argument.hasPrefix("--") && (index == 0 || arguments[index - 1] != "--hover")
             }.map { fileURL($0.element) }
-            return await renderWheel(files, mode: mode, hovered: hovered, appearance: appearance, to: output)
+            let click = arguments.contains("--click") ? (chip: arguments.contains("--chip"), on: true) : (chip: false, on: false)
+            return await renderWheel(files, mode: mode, hovered: hovered, click: click.on, chipHovered: click.chip,
+                                     appearance: appearance, to: output)
 
         default:
             print(usage)
@@ -104,11 +153,13 @@ enum CLI {
     }
 
     @MainActor
-    private static func renderWheel(_ files: [URL], mode: WheelMode, hovered: Int?, appearance: NSAppearance?,
-                                    to output: URL) async -> Int32 {
+    private static func renderWheel(_ files: [URL], mode: WheelMode, hovered: Int?, click: Bool, chipHovered: Bool,
+                                    appearance: NSAppearance?, to output: URL) async -> Int32 {
         let model = WheelModel()
         model.load(urls: files, mode: mode)
         model.hovered = hovered
+        model.interactive = click
+        model.chipHovered = chipHovered
         model.visible = true
         try? await Task.sleep(nanoseconds: 800_000_000) // let the Quick Look thumbnail arrive
         let side = model.canvasSize
