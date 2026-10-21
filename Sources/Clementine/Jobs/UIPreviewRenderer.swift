@@ -71,6 +71,135 @@ enum UIPreview {
                        appearance: appearance, to: out("result-metadata"))
 
         snapshotWindow(NSHostingController(rootView: SettingsView()), appearance: appearance, to: out("settings"))
+
+        renderPDFAndMetadata(appearance: appearance, image: image, out: out)
+    }
+
+    // MARK: Page organizer and metadata editor
+
+    private static func renderPDFAndMetadata(appearance: NSAppearance, image: URL?, out: (String) -> URL) {
+        let fixtures = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("clementine-ui-fixtures", isDirectory: true)
+        try? FileManager.default.createDirectory(at: fixtures, withIntermediateDirectories: true)
+        let report = fixtures.appendingPathComponent("Quarterly report.pdf")
+        let slides = fixtures.appendingPathComponent("Slides.pdf")
+        samplePDF(report, pages: 9, landscape: false, hue: 0.07)
+        samplePDF(slides, pages: 3, landscape: true, hue: 0.42)
+
+        if let model = try? PageOrganizerModel(urls: [report], merging: false) {
+            let ids = model.tiles.map(\.id)
+            model.select(ids[2], modifiers: [])
+            model.rotate(clockwise: true)
+            model.move([ids[2]], to: 0)
+            model.select(ids[4], modifiers: [])
+            model.select(ids[5], modifiers: .shift)
+            let view = PageOrganizerView(model: model, title: "Pages", symbol: "doc.on.doc", onApply: { _ in }, onCancel: {})
+                .frame(width: 780, height: 640)
+            snapshotWindow(NSHostingController(rootView: view), appearance: appearance, settle: 1.5, to: out("pages"))
+            let dragging = PageOrganizerView(model: model, title: "Pages", symbol: "doc.on.doc", onApply: { _ in }, onCancel: {},
+                                             previewDrag: CGPoint(x: 470, y: 250))
+                .frame(width: 780, height: 640)
+            snapshotWindow(NSHostingController(rootView: dragging), appearance: appearance, settle: 1.5, to: out("pages-drag"))
+        }
+        if let model = try? PageOrganizerModel(urls: [report, slides], merging: true) {
+            let ids = model.tiles.map(\.id)
+            model.move([ids[9], ids[10]], to: 1)
+            model.select(ids[9], modifiers: [])
+            model.duplicate()
+            let view = PageOrganizerView(model: model, title: "Merge", symbol: "square.stack", onApply: { _ in }, onCancel: {})
+                .frame(width: 780, height: 600)
+            snapshotWindow(NSHostingController(rootView: view), appearance: appearance, settle: 1.5, to: out("merge"))
+        }
+
+        let photo = fixtures.appendingPathComponent("IMG_2041.jpg")
+        samplePhoto(photo, from: image)
+        if let snapshot = wait({ try await MetadataEngine.read(photo) }) {
+            let model = MetadataEditorModel(url: photo, snapshot: snapshot, preview: NSImage(contentsOf: photo))
+            model.values["title"] = "Golden hour in Alfama"
+            model.values["keywords"] = "Lisbon, sunset, tram 28"
+            model.values["rating"] = "4"
+            model.values["date"] = "2026-07-14 18:42:09"
+            model.removeLocation = true
+            let view = MetadataEditorView(model: model, onSave: { _ in }, onCancel: {}).frame(width: 540, height: 760)
+            snapshotWindow(NSHostingController(rootView: view), appearance: appearance, settle: 0.8, to: out("metadata-image"))
+
+            model.values["date"] = "2026-02-30"
+            let open = MetadataEditorView(model: model, onSave: { _ in }, onCancel: {}, showsAll: true).frame(width: 540, height: 900)
+            snapshotWindow(NSHostingController(rootView: open), appearance: appearance, settle: 0.8, to: out("metadata-image-all"))
+        }
+        if let snapshot = wait({ try await MetadataEngine.read(report) }) {
+            let model = MetadataEditorModel(url: report, snapshot: snapshot, preview: NSWorkspace.shared.icon(forFile: report.path))
+            model.values["author"] = "Mustafa"
+            let view = MetadataEditorView(model: model, onSave: { _ in }, onCancel: {}).frame(width: 540, height: 600)
+            snapshotWindow(NSHostingController(rootView: view), appearance: appearance, settle: 0.5, to: out("metadata-pdf"))
+        }
+    }
+
+    /// Runs async work to completion from the synchronous render loop.
+    private static func wait<T>(_ work: @escaping @MainActor () async throws -> T) -> T? {
+        var result: T?
+        var finished = false
+        Task { @MainActor in
+            result = try? await work()
+            finished = true
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while !finished && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        return result
+    }
+
+    /// A believable document: a heading, text lines and a colored figure on every page.
+    private static func samplePDF(_ url: URL, pages: Int, landscape: Bool, hue: CGFloat) {
+        var box = landscape ? CGRect(x: 0, y: 0, width: 792, height: 612) : CGRect(x: 0, y: 0, width: 612, height: 792)
+        guard let context = CGContext(url as CFURL, mediaBox: &box, [kCGPDFContextTitle: "Quarterly report", kCGPDFContextAuthor: "Ana Sousa"] as CFDictionary)
+        else { return }
+        for index in 0..<pages {
+            context.beginPDFPage(nil)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+            let color = NSColor(hue: (hue + CGFloat(index) * 0.09).truncatingRemainder(dividingBy: 1), saturation: 0.55, brightness: 0.95, alpha: 1)
+            color.setFill()
+            NSBezierPath(roundedRect: NSRect(x: 60, y: box.height - 300, width: box.width - 120, height: 170), xRadius: 14, yRadius: 14).fill()
+            let heading = landscape ? "Slide \(index + 1)" : "Section \(index + 1)"
+            (heading as NSString).draw(at: NSPoint(x: 60, y: box.height - 110),
+                                       withAttributes: [.font: NSFont.systemFont(ofSize: 40, weight: .bold), .foregroundColor: NSColor.black])
+            NSColor(white: 0.78, alpha: 1).setFill()
+            for line in 0..<(landscape ? 6 : 14) {
+                let width = (box.width - 120) * (line % 4 == 3 ? 0.6 : 1)
+                NSBezierPath(roundedRect: NSRect(x: 60, y: box.height - 350 - CGFloat(line) * 30, width: width, height: 12), xRadius: 6, yRadius: 6).fill()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            context.endPDFPage()
+        }
+        context.closePDF()
+    }
+
+    /// A JPEG with a camera, lens, GPS and a few tags, drawn from `source` when given.
+    private static func samplePhoto(_ url: URL, from source: URL?) {
+        var image = source.flatMap { try? ImageEngine.load($0, maxPixel: 1200).image }
+        if image == nil {
+            let size = NSSize(width: 1200, height: 800)
+            let drawn = NSImage(size: size, flipped: false) { rect in
+                NSGradient(colors: [NSColor(calibratedRed: 1, green: 0.62, blue: 0.3, alpha: 1),
+                                    NSColor(calibratedRed: 0.55, green: 0.35, blue: 0.6, alpha: 1)])?.draw(in: rect, angle: -90)
+                NSColor(calibratedRed: 1, green: 0.9, blue: 0.6, alpha: 1).setFill()
+                NSBezierPath(ovalIn: NSRect(x: 520, y: 300, width: 160, height: 160)).fill()
+                return true
+            }
+            var rect = NSRect(origin: .zero, size: size)
+            image = drawn.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+        }
+        guard let image, let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil) else { return }
+        let properties: [CFString: Any] = [
+            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFMake: "Apple", kCGImagePropertyTIFFModel: "iPhone 15 Pro",
+                                             kCGImagePropertyTIFFArtist: "Ana Sousa"],
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifLensModel: "iPhone 15 Pro back triple camera 6.765mm f/1.78",
+                                             kCGImagePropertyExifDateTimeOriginal: "2026:07:14 18:42:09"],
+            kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 38.7139, kCGImagePropertyGPSLatitudeRef: "N",
+                                            kCGImagePropertyGPSLongitude: 9.1394, kCGImagePropertyGPSLongitudeRef: "W"],
+            kCGImagePropertyIPTCDictionary: [kCGImagePropertyIPTCKeywords: ["Lisbon", "sunset"]],
+        ]
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        CGImageDestinationFinalize(destination)
     }
 
     /// Draws a view hierarchy into a PNG.

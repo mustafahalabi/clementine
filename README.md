@@ -13,6 +13,7 @@ brew install ffmpeg webp     # ffmpeg/ffprobe for video & audio, cwebp for WebP 
 make run                     # builds build/Clementine.app and launches it
 make install                 # copies it to /Applications
 make test                    # smoke, edge-case and stress suites: every action, run headlessly on generated files
+scripts/test-pdf-metadata.sh # page lists, merge picks and metadata writers, read back after each run
 ```
 
 You can also open `Package.swift` in Xcode.
@@ -34,10 +35,12 @@ You can also open `Package.swift` in Xcode.
 
 **Tools (⌥⇧)**
 
-- **Images:** Compress, Target Size, Resize, Crop (aspect presets), Rotate/Flip, Edit (exposure, brightness, contrast, saturation, highlights, shadows with live preview), Add BG (gradient backdrop, padding, rounded corners, shadow with live preview), Read QR, Metadata, Remove Metadata. With 2+ images: Collage, Make PDF.
-- **Video:** Compress, Target Size (two-pass), Trim, Speed, Split, Snapshot, Mute, Rotate, Metadata, Remove Metadata. With 2+ clips: Join (mixed sizes/codecs are fine).
+- **Images:** Compress, Target Size, Resize, Crop (aspect presets), Rotate/Flip, Edit (exposure, brightness, contrast, saturation, highlights, shadows with live preview), Add BG (gradient backdrop, padding, rounded corners, shadow with live preview), Read QR, Metadata (edit title, description, artist, copyright, keywords, date taken, rating; drop the location), Remove Metadata. With 2+ images: Collage, Make PDF.
+- **Video:** Compress, Target Size (two-pass), Trim, Speed, Split, Snapshot, Mute, Rotate, Metadata (edit title, artist, album, year, genre, track, comment), Remove Metadata. With 2+ clips: Join (mixed sizes/codecs are fine).
 - **Audio:** Compress, Target Size, Trim, Speed, Split, Normalize (EBU R128), Trim Silence, Channels (mono/stereo), Bleep (time ranges), Metadata, Remove Metadata. With 2+ files: Join.
-- **PDF:** Compress, Pages (keep/reorder, e.g. `3, 1-2, 5-`), Split, Rotate, Metadata, Remove Metadata. With 2+ files: Merge.
+- **PDF:** Compress, Pages (a thumbnail grid: drag to reorder, rotate, duplicate, delete), Split, Rotate, Metadata (edit title, author, subject, keywords, creator), Remove Metadata. With 2+ files: Merge, in the same grid with pages from every file.
+
+Metadata edits are saved to an `(edited)` copy without re-encoding (JPEG, HEIC, TIFF, PNG; ffmpeg stream copy keeps cover art). The page grid applies a page list, which you can also type on the CLI: `3r90, 1-2, 5-` keeps page 3 turned 90° clockwise, then 1–2, then 5 to the end; when merging, `2:3` is page 3 of file 2 and `2:` all of it.
 
 Dropping several files runs the action on each, or once on all of them for batch tools like Join, Merge and Collage. Each job gets a small progress window, and finished files are revealed in Finder. Dropping on the middle of the wheel cancels.
 
@@ -66,14 +69,16 @@ BIN=.build/debug/Clementine
 $BIN --list photo.heic                                   # which actions apply
 $BIN --run convert.image.webp photo.heic
 $BIN --run tool.fit --set megabytes=2 clip.mov
+$BIN --run tool.pdf.merge --set 'pages=2:1-3, 1:2r90' a.pdf b.pdf
+$BIN --run tool.metadata --set 'fields={"title":"Lisbon","rating":4,"removeLocation":true}' photo.jpg   # no fields: show it all
 $BIN --render-wheel /tmp/wheel.png --tools --hover 3 clip.mov   # draw the wheel to a PNG
 build/Clementine.app/Contents/MacOS/Clementine --demo-wheel --tools clip.mov  # live wheel, no drag
 ```
 
 ## Known limits / roadmap
 
-- **Interactive editors still to build:** freeform crop handles, annotate, redact, waveform trim, a bleep editor, and drag-to-reorder for PDF pages. Today these use presets or typed values (aspect ratios, `0:05-0:06` ranges, `3, 1-2` page lists).
-- **Metadata** can be viewed or removed, but not edited yet.
+- **Interactive editors still to build:** freeform crop handles, annotate, redact, waveform trim, and a bleep editor. Today these use presets or typed values (aspect ratios, `0:05-0:06` ranges).
+- **Metadata editing** covers the common fields above. Other image formats (WebP, GIF, AVIF…) can't be edited without re-encoding, so they're refused.
 - **RAR** can be extracted (via bsdtar) but not created.
 - **Split** copies streams without re-encoding, so cuts land on keyframes and part lengths are approximate.
 - **DOCX → PDF** keeps text styling but not embedded images.
