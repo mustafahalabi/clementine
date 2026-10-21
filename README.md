@@ -18,6 +18,7 @@ make run                     # builds build/Clementine.app and launches it
 make install                 # copies it to /Applications
 make test                    # smoke, edge-case and stress suites: every action, run headlessly on generated files
 scripts/test-waveform.sh     # channel layouts, bleeps on video, editor times, offscreen editor renders
+scripts/test-pdf-metadata.sh # page lists, merge picks and metadata writers, read back after each run
 ```
 
 The tests (and an app built without `make tools`) use Homebrew's tools: `brew install ffmpeg webp`. You can also open `Package.swift` in Xcode.
@@ -97,6 +98,8 @@ $BIN --run convert.image.jpeg *.png --record               # parallel, like the 
 $BIN --history                                           # also --undo, --clear-history
 $BIN --run tool.audio.channels --set channels=swap --set left=0.8 song.mp3   # mono | stereo | swap, gains 0–2
 $BIN --run tool.audio.bleep --set "ranges=0:05.2-0:06, 1:10-1:12" clip.mp4
+$BIN --run tool.pdf.merge --set 'pages=2:1-3, 1:2r90' a.pdf b.pdf
+$BIN --run tool.metadata --set 'fields={"title":"Lisbon","rating":4,"removeLocation":true}' photo.jpg   # no fields: show it all
 $BIN --render-wheel /tmp/wheel.png --tools --hover 3 clip.mov   # draw the wheel to a PNG
 build/Clementine.app/Contents/MacOS/Clementine --demo-wheel --tools clip.mov  # live wheel, no drag (--click for click mode)
 ```
