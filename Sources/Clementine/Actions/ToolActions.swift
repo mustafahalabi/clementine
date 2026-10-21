@@ -92,6 +92,7 @@ enum ToolActions {
                    .text("start", "Start", placeholder: "0:00", default: "0:00"),
                    .text("end", "End", placeholder: "End of file"),
                ],
+               editor: { urls, defaults, apply in TrimEditor.present(urls: urls, values: defaults, apply: apply) },
                accepts: kinds(.video, .audio),
                run: { ctx in .files([try await MediaEngine.trim(ctx.input, start: ctx.params.text("start"),
                                                                  end: ctx.params.text("end"), progress: ctx.progress)]) }),
@@ -130,6 +131,7 @@ enum ToolActions {
                    .slider("left", "Left volume", 0...2, default: 1),
                    .slider("right", "Right volume", 0...2, default: 1),
                ],
+               editor: { urls, defaults, apply in ChannelsEditor.present(urls: urls, values: defaults, apply: apply) },
                accepts: kinds(.audio),
                run: { ctx in
                    let layout = MediaEngine.ChannelLayout(rawValue: ctx.params.choice("channels")) ?? .stereo
@@ -138,6 +140,7 @@ enum ToolActions {
                }),
         Action(id: "tool.audio.bleep", title: "Bleep", symbol: "exclamationmark.bubble", mode: .tools,
                parameters: [.text("ranges", "Bleep ranges", placeholder: "0:05-0:06, 1:10-1:12")],
+               editor: { urls, defaults, apply in BleepEditor.present(urls: urls, values: defaults, apply: apply) },
                accepts: kinds(.audio, .video),
                run: { ctx in .files([try await MediaEngine.bleep(ctx.input, ranges: ctx.params.text("ranges"), progress: ctx.progress)]) }),
         Action(id: "tool.audio.join", title: "Join", symbol: "link", mode: .tools, minInputs: 2, batch: true,

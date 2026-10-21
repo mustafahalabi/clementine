@@ -13,6 +13,7 @@ brew install ffmpeg webp     # ffmpeg/ffprobe for video & audio, cwebp for WebP 
 make run                     # builds build/Clementine.app and launches it
 make install                 # copies it to /Applications
 make test                    # smoke, edge-case and stress suites: every action, run headlessly on generated files
+scripts/test-waveform.sh     # channel layouts, bleeps on video, editor times, offscreen editor renders
 ```
 
 You can also open `Package.swift` in Xcode.
@@ -35,8 +36,9 @@ You can also open `Package.swift` in Xcode.
 **Tools (⌥⇧)**
 
 - **Images:** Compress, Target Size, Resize, Crop (aspect presets), Rotate/Flip, Edit (exposure, brightness, contrast, saturation, highlights, shadows with live preview), Add BG (gradient backdrop, padding, rounded corners, shadow with live preview), Read QR, Metadata, Remove Metadata. With 2+ images: Collage, Make PDF.
-- **Video:** Compress, Target Size (two-pass), Trim, Speed, Split, Snapshot, Mute, Rotate, Metadata, Remove Metadata. With 2+ clips: Join (mixed sizes/codecs are fine).
-- **Audio:** Compress, Target Size, Trim, Speed, Split, Normalize (EBU R128), Trim Silence, Channels (mono/stereo), Bleep (time ranges), Metadata, Remove Metadata. With 2+ files: Join.
+- **Video:** Compress, Target Size (two-pass), Trim, Speed, Split, Snapshot, Mute, Rotate, Bleep, Metadata, Remove Metadata. With 2+ clips: Join (mixed sizes/codecs are fine).
+- **Audio:** Compress, Target Size, Trim, Speed, Split, Normalize (EBU R128), Trim Silence, Channels (mono/stereo/swap L⇄R, per-side volume), Bleep, Metadata, Remove Metadata. With 2+ files: Join.
+- **Waveform editors:** Trim, Bleep and Channels open on the file's waveform (read with AVFoundation, ffmpeg for Ogg/Matroska and friends). Trim has draggable handles that snap to the ends and to where sound starts, editable times, “trim silent ends”, a filmstrip and preview for video, and playback of the selection. Bleep: drag across the waveform to mark words, adjust edges, and compare the original with a bleeped preview; on video only the soundtrack is re-encoded. Channels previews the output lanes live and plays a render of the result.
 - **PDF:** Compress, Pages (keep/reorder, e.g. `3, 1-2, 5-`), Split, Rotate, Metadata, Remove Metadata. With 2+ files: Merge.
 
 Dropping several files runs the action on each, or once on all of them for batch tools like Join, Merge and Collage. Each job gets a small progress window, and finished files are revealed in Finder. Dropping on the middle of the wheel cancels.
@@ -52,6 +54,7 @@ Sources/Clementine/
   Engines/    ImageEngine/ImageTools (ImageIO, Core Image, Vision), PDFEngine (PDFKit),
               DocumentEngine (AppKit text system), MediaEngine/FFmpeg, ArchiveEngine, SubtitleEngine
   Jobs/       JobRunner, progress / parameter / result windows
+  Waveform/   peak extraction + cache, playback and preview renders, the Trim / Bleep / Channels editors
 ```
 
 - **Spotting drags:** a global mouse-down monitor (no Accessibility permission needed) starts a 30 Hz poll while the button is held. When the shared drag pasteboard's change count bumps and it holds file URLs, a drag is underway. If ⇧ is down, the wheel opens under the pointer.
@@ -66,14 +69,17 @@ BIN=.build/debug/Clementine
 $BIN --list photo.heic                                   # which actions apply
 $BIN --run convert.image.webp photo.heic
 $BIN --run tool.fit --set megabytes=2 clip.mov
+$BIN --run tool.audio.channels --set channels=swap --set left=0.8 song.mp3   # mono | stereo | swap, gains 0–2
+$BIN --run tool.audio.bleep --set "ranges=0:05.2-0:06, 1:10-1:12" clip.mp4
 $BIN --render-wheel /tmp/wheel.png --tools --hover 3 clip.mov   # draw the wheel to a PNG
 build/Clementine.app/Contents/MacOS/Clementine --demo-wheel --tools clip.mov  # live wheel, no drag
 ```
 
 ## Known limits / roadmap
 
-- **Interactive editors still to build:** freeform crop handles, annotate, redact, waveform trim, a bleep editor, and drag-to-reorder for PDF pages. Today these use presets or typed values (aspect ratios, `0:05-0:06` ranges, `3, 1-2` page lists).
+- **Interactive editors still to build:** freeform crop handles, annotate, redact, and drag-to-reorder for PDF pages. Today these use presets or typed values (aspect ratios, `0:05-0:06` ranges, `3, 1-2` page lists).
 - **Metadata** can be viewed or removed, but not edited yet.
+- **Waveform editors** show a filmstrip and video preview only for formats AVFoundation reads (MP4, MOV, M4V); MKV, WebM and the like get the waveform and sound-only playback. Bleep and Channels previews are rendered with ffmpeg first, so long files take a moment.
 - **RAR** can be extracted (via bsdtar) but not created.
 - **Split** copies streams without re-encoding, so cuts land on keyframes and part lengths are approximate.
 - **DOCX → PDF** keeps text styling but not embedded images.

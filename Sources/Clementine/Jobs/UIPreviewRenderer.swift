@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 
 /// Dev aid: draws the job windows and Settings to PNGs without putting anything on screen.
-/// `Clementine --render-ui <dir> [image]`, in light and dark (materials render flat).
+/// `Clementine --render-ui <dir> [image] [audio] [video]`, in light and dark (materials render flat).
 @MainActor
 enum UIPreview {
     static func handle(_ arguments: [String]) -> Bool {
@@ -13,14 +13,15 @@ enum UIPreview {
             let directory = URL(fileURLWithPath: arguments[1], isDirectory: true)
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let image = arguments.count > 2 ? URL(fileURLWithPath: arguments[2]) : nil
+            let media = arguments.dropFirst(3).map { URL(fileURLWithPath: $0) }
             for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-                render(appearance: NSAppearance(named: appearance)!, suffix: name, image: image, to: directory)
+                render(appearance: NSAppearance(named: appearance)!, suffix: name, image: image, media: media, to: directory)
             }
         }
         return true
     }
 
-    private static func render(appearance: NSAppearance, suffix: String, image: URL?, to directory: URL) {
+    private static func render(appearance: NSAppearance, suffix: String, image: URL?, media: [URL], to directory: URL) {
         func out(_ name: String) -> URL { directory.appendingPathComponent("\(name)-\(suffix).png") }
 
         // Progress cards, stacked as they'd be on screen.
@@ -71,6 +72,70 @@ enum UIPreview {
                        appearance: appearance, to: out("result-metadata"))
 
         snapshotWindow(NSHostingController(rootView: SettingsView()), appearance: appearance, to: out("settings"))
+
+        renderWaveformEditors(appearance: appearance, media: media, out: out)
+    }
+
+    /// Trim, Bleep and Channels editors with real peaks read from the given audio and video files.
+    private static func renderWaveformEditors(appearance: NSAppearance, media: [URL], out: (String) -> URL) {
+        let audio = media.first { FileItem(url: $0).kind == .audio }
+        let video = media.first { FileItem(url: $0).kind == .video }
+        func settle(_ model: WaveformEditorModel) {
+            model.load()
+            let deadline = Date().addingTimeInterval(8)
+            while model.waveform == nil && model.failure == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        }
+        if let trim = ActionRegistry.find("tool.media.trim") {
+            let loading = TrimModel(url: URL(fileURLWithPath: "/tmp/voice memo.m4a"), values: trim.defaults)
+            loading.holdsPlaceholder = true
+            snapshotWindow(NSHostingController(rootView: TrimEditorView(model: loading, subtitle: "voice memo.m4a", onApply: { _ in }, onCancel: {})),
+                           appearance: appearance, to: out("trim-loading"))
+            for (name, url) in [("trim-audio", audio), ("trim-video", video)] {
+                guard let url else { continue }
+                var values = trim.defaults
+                values.storage["start"] = .text("0:02.6")
+                values.storage["end"] = .text("0:14.2")
+                let model = TrimModel(url: url, values: values)
+                settle(model)
+                snapshotWindow(NSHostingController(rootView: TrimEditorView(model: model, subtitle: url.lastPathComponent,
+                                                                            onApply: { _ in }, onCancel: {})),
+                               appearance: appearance, settle: 1, to: out(name))
+                if name == "trim-audio" {
+                    model.setTrimsSilence(true)
+                    snapshotWindow(NSHostingController(rootView: TrimEditorView(model: model, subtitle: url.lastPathComponent,
+                                                                                onApply: { _ in }, onCancel: {})),
+                                   appearance: appearance, settle: 0.6, to: out("trim-audio-silence"))
+                }
+                model.close()
+            }
+        }
+        if let bleep = ActionRegistry.find("tool.audio.bleep"), let url = audio ?? video {
+            for (name, ranges) in [("bleep", "0:04.1-0:04.9, 0:08.3-0:09.4, 0:12-0:12.6"), ("bleep-empty", "")] {
+                var values = bleep.defaults
+                values.storage["ranges"] = .text(ranges)
+                let model = BleepModel(url: url, values: values)
+                settle(model)
+                if !ranges.isEmpty { model.playback.time = 6.2 }
+                snapshotWindow(NSHostingController(rootView: BleepEditorView(model: model, subtitle: url.lastPathComponent,
+                                                                             onApply: { _ in }, onCancel: {})),
+                               appearance: appearance, settle: 1, to: out(name))
+                model.close()
+            }
+        }
+        if let channels = ActionRegistry.find("tool.audio.channels"), let url = audio {
+            for (name, layout, left, right) in [("channels-swap", 2, 0.6, 1.4), ("channels-mono", 0, 1.0, 1.0)] {
+                var values = channels.defaults
+                values.storage["channels"] = .choice(layout)
+                values.storage["left"] = .number(left)
+                values.storage["right"] = .number(right)
+                let model = ChannelsModel(url: url, values: values)
+                settle(model)
+                snapshotWindow(NSHostingController(rootView: ChannelsEditorView(model: model, subtitle: url.lastPathComponent,
+                                                                                onApply: { _ in }, onCancel: {})),
+                               appearance: appearance, settle: 1, to: out(name))
+                model.close()
+            }
+        }
     }
 
     /// Draws a view hierarchy into a PNG.
