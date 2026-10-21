@@ -20,6 +20,10 @@ test:
 	scripts/smoke-test.sh
 	scripts/edge-test.sh
 	scripts/stress-test.sh
+	scripts/test-image-editor.sh
+	scripts/test-waveform.sh
+	scripts/test-pdf-metadata.sh
+	scripts/test-productivity.sh
 
 clean:
 	rm -rf .build build
