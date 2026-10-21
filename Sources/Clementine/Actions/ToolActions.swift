@@ -125,13 +125,20 @@ enum ToolActions {
                accepts: kinds(.audio),
                run: { ctx in .files([try await MediaEngine.trimSilence(ctx.input, progress: ctx.progress)]) }),
         Action(id: "tool.audio.channels", title: "Channels", symbol: "speaker.wave.2", mode: .tools,
-               parameters: [.choice("channels", "Output", ["Mono", "Stereo"])],
+               parameters: [
+                   .choice("channels", "Output", MediaEngine.ChannelLayout.names),
+                   .slider("left", "Left volume", 0...2, default: 1),
+                   .slider("right", "Right volume", 0...2, default: 1),
+               ],
                accepts: kinds(.audio),
-               run: { ctx in .files([try await MediaEngine.channels(ctx.input, mono: ctx.params.choice("channels") == 0,
-                                                                     progress: ctx.progress)]) }),
+               run: { ctx in
+                   let layout = MediaEngine.ChannelLayout(rawValue: ctx.params.choice("channels")) ?? .stereo
+                   return .files([try await MediaEngine.channels(ctx.input, layout: layout, left: ctx.params.number("left"),
+                                                                 right: ctx.params.number("right"), progress: ctx.progress)])
+               }),
         Action(id: "tool.audio.bleep", title: "Bleep", symbol: "exclamationmark.bubble", mode: .tools,
                parameters: [.text("ranges", "Bleep ranges", placeholder: "0:05-0:06, 1:10-1:12")],
-               accepts: kinds(.audio),
+               accepts: kinds(.audio, .video),
                run: { ctx in .files([try await MediaEngine.bleep(ctx.input, ranges: ctx.params.text("ranges"), progress: ctx.progress)]) }),
         Action(id: "tool.audio.join", title: "Join", symbol: "link", mode: .tools, minInputs: 2, batch: true,
                accepts: kinds(.audio),
