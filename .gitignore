@@ -7,3 +7,4 @@ vendor/bin/*
 !vendor/bin/.gitkeep
 .DS_Store
 vendor/tools.txt
+dist/

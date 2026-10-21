@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Clementine runs with the hardened runtime (codesign -\-options runtime), which notarization requires,
+  but outside the App Sandbox: watching drags system-wide and running ffmpeg on arbitrary files need it.
+
+  No runtime exceptions are needed:
+  - The bundled tools in Contents/Resources/bin are static executables signed with the same Developer ID
+    and their own hardened runtime, so Process can launch them as-is.
+  - Sparkle.framework (and its XPC services) is re-signed with the same team, so library validation passes.
+  If you swap in a dynamically linked ffmpeg whose dylibs aren't signed by your team, sign those dylibs too
+  rather than adding com.apple.security.cs.disable-library-validation.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+</dict>
+</plist>
