@@ -88,6 +88,8 @@ struct Action: Identifiable {
     var symbol: String? = nil
     let mode: WheelMode
     var minInputs = 1
+    /// Hidden from the wheel for bigger selections (single-image editors).
+    var maxInputs = Int.max
     /// Run once with every dropped file instead of once per file.
     var batch = false
     /// How many files of a multi-file drop may run at once. nil picks from the file kinds (see `BatchRunner.limit`).
@@ -132,7 +134,7 @@ enum ActionRegistry {
         guard !items.isEmpty else { return [] }
         let candidates = mode == .convert ? ConvertActions.all : ToolActions.all
         var result = candidates.filter { action in
-            items.count >= action.minInputs && items.allSatisfy(action.accepts)
+            (action.minInputs...action.maxInputs).contains(items.count) && items.allSatisfy(action.accepts)
         }
         // Archiving is the fallback for files we can't otherwise convert (folders, mixed selections, unknown types).
         if mode == .convert && (result.isEmpty || items.allSatisfy({ $0.kind == .folder || $0.kind == .other })) {

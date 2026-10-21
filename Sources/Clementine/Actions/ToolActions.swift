@@ -43,9 +43,20 @@ enum ToolActions {
                accepts: kinds(.image),
                run: { ctx in .files([try await ImageTools.resize(ctx.input, choice: ctx.params.choice("size"))]) }),
         Action(id: "tool.image.crop", title: "Crop", symbol: "crop", mode: .tools,
-               parameters: [.choice("aspect", "Aspect ratio", ImageTools.cropOptions)],
+               parameters: [
+                   .text("crop", "Crop", placeholder: ImageEdits.cropExample),
+                   .choice("aspect", "Aspect ratio", ImageTools.cropOptions),
+               ],
+               editor: CropEditor.present,
                accepts: kinds(.image),
-               run: { ctx in .files([try await ImageTools.crop(ctx.input, choice: ctx.params.choice("aspect"))]) }),
+               run: { ctx in
+                   // The editor (or `--set crop=…`) gives a rectangle; without one, crop centered to the aspect preset.
+                   let json = ctx.params.text("crop")
+                   if json.trimmingCharacters(in: .whitespaces).isEmpty {
+                       return .files([try await ImageTools.crop(ctx.input, choice: ctx.params.choice("aspect"))])
+                   }
+                   return .files([try await ImageEdits.crop(ctx.input, json: json)])
+               }),
         Action(id: "tool.image.rotate", title: "Rotate", symbol: "rotate.right", mode: .tools,
                parameters: [.choice("rotation", "Rotation", ImageTools.rotateOptions)],
                accepts: kinds(.image),
@@ -62,6 +73,20 @@ enum ToolActions {
                preview: { url, params in ImageTools.preview(url) { try ImageTools.adjusted($0, params) } },
                accepts: kinds(.image),
                run: { ctx in .files([try await ImageTools.adjust(ctx.input, params: ctx.params)]) }),
+        Action(id: "tool.image.redact", title: "Redact", symbol: "eye.slash", mode: .tools, maxInputs: 1,
+               parameters: [
+                   .text("boxes", "Areas", placeholder: ImageEdits.boxesExample),
+                   .choice("style", "Style", ImageEdits.redactStyles),
+               ],
+               editor: RedactEditor.present,
+               accepts: kinds(.image),
+               run: { ctx in .files([try await ImageEdits.redact(ctx.input, boxes: ctx.params.text("boxes"),
+                                                                  style: ctx.params.choice("style"))]) }),
+        Action(id: "tool.image.annotate", title: "Annotate", symbol: "pencil.tip.crop.circle", mode: .tools, maxInputs: 1,
+               parameters: [.text("shapes", "Annotations", placeholder: ImageEdits.annotationsExample)],
+               editor: AnnotateEditor.present,
+               accepts: kinds(.image),
+               run: { ctx in .files([try await ImageEdits.annotate(ctx.input, json: ctx.params.text("shapes"))]) }),
         Action(id: "tool.image.background", title: "Add BG", symbol: "photo.on.rectangle", mode: .tools,
                parameters: [
                    .choice("background", "Background", ImageTools.backgrounds.map(\.name)),
