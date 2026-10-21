@@ -1,0 +1,48 @@
+import AppKit
+import SwiftUI
+
+@main
+enum Entry {
+    static func main() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        #if DEBUG
+        if UIPreview.handle(arguments) { exit(0) }
+        #endif
+        if let command = arguments.first, CLI.commands.contains(command) {
+            CLI.run(arguments)
+        }
+        ClementineApp.main()
+    }
+}
+
+struct ClementineApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    var body: some Scene {
+        MenuBarExtra("Clementine", systemImage: "camera.aperture") {
+            MenuContent()
+        }
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        WheelController.shared.start()
+    }
+}
+
+private struct MenuContent: View {
+    @AppStorage(Prefs.enabledKey) private var enabled = true
+
+    var body: some View {
+        Toggle("Wheel Enabled", isOn: $enabled)
+        Divider()
+        Text("Hold ⇧ while dragging to convert")
+        Text("Hold ⌥⇧ while dragging for tools")
+        Divider()
+        Button("Settings…") { SettingsWindow.show() }
+            .keyboardShortcut(",")
+        Button("Quit Clementine") { NSApp.terminate(nil) }
+            .keyboardShortcut("q")
+    }
+}

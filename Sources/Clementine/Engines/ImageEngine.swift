@@ -1,0 +1,402 @@
+import AppKit
+import ImageIO
+import PDFKit
+import Vision
+
+enum ImageFormat: String, CaseIterable {
+    case jpeg, png, heic, webp, avif, tiff, bmp, gif, pdf
+
+    init?(ext: String) {
+        let ext = ext.lowercased()
+        guard let match = Self.allCases.first(where: { $0.aliases.contains(ext) }) else { return nil }
+        self = match
+    }
+
+    var ext: String { self == .jpeg ? "jpg" : rawValue }
+    var label: String { self == .jpeg ? "JPG" : rawValue.uppercased() }
+
+    var aliases: [String] {
+        switch self {
+        case .jpeg: return ["jpg", "jpeg", "jpe"]
+        case .tiff: return ["tif", "tiff"]
+        case .heic: return ["heic", "heif"]
+        default: return [rawValue]
+        }
+    }
+
+    var utType: String? {
+        switch self {
+        case .jpeg: return "public.jpeg"
+        case .png: return "public.png"
+        case .heic: return "public.heic"
+        case .avif: return "public.avif"
+        case .tiff: return "public.tiff"
+        case .bmp: return "com.microsoft.bmp"
+        case .gif: return "com.compuserve.gif"
+        case .webp, .pdf: return nil
+        }
+    }
+
+    var supportsAlpha: Bool { self != .jpeg && self != .bmp }
+    var isLossy: Bool { [.jpeg, .heic, .webp, .avif].contains(self) }
+}
+
+struct LoadedImage {
+    let image: CGImage
+    /// Source metadata with orientation reset, since pixels are already upright.
+    let properties: [CFString: Any]
+    let format: ImageFormat?
+}
+
+enum ImageEngine {
+    // MARK: Loading
+
+    /// Loads the first frame, upright, optionally downscaled so the long edge is at most `maxPixel`.
+    static func load(_ url: URL, maxPixel: Int? = nil) throws -> LoadedImage {
+        if url.pathExtension.lowercased() == "svg" {
+            return LoadedImage(image: try rasterize(url, maxPixel: maxPixel ?? 2048), properties: [:], format: nil)
+        }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil), CGImageSourceGetCount(source) > 0 else {
+            throw ClementineError.unreadable(url)
+        }
+        var properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
+        let longEdge = max(properties[kCGImagePropertyPixelWidth] as? Int ?? 0, properties[kCGImagePropertyPixelHeight] as? Int ?? 0)
+
+        let image: CGImage?
+        if longEdge > 0 {
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: min(maxPixel ?? longEdge, longEdge),
+            ]
+            image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        } else {
+            image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        }
+        guard let image else { throw ClementineError.unreadable(url) }
+
+        for key in [kCGImagePropertyPixelWidth, kCGImagePropertyPixelHeight, kCGImagePropertyDepth,
+                    kCGImagePropertyHasAlpha, kCGImagePropertyColorModel, kCGImagePropertyProfileName] {
+            properties.removeValue(forKey: key)
+        }
+        properties[kCGImagePropertyOrientation] = 1
+        if var tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            tiff[kCGImagePropertyTIFFOrientation] = 1
+            properties[kCGImagePropertyTIFFDictionary] = tiff
+        }
+        return LoadedImage(image: image, properties: properties, format: ImageFormat(ext: url.pathExtension))
+    }
+
+    private static func rasterize(_ url: URL, maxPixel: Int) throws -> CGImage {
+        guard let vector = NSImage(contentsOf: url), vector.size.width > 0, vector.size.height > 0 else {
+            throw ClementineError.unreadable(url)
+        }
+        let scale = CGFloat(maxPixel) / max(vector.size.width, vector.size.height)
+        let width = Int(vector.size.width * scale), height = Int(vector.size.height * scale)
+        return try render(width: width, height: height) { context in
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+            vector.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+            NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    // MARK: Writing
+
+    static func write(_ image: CGImage, to url: URL, format: ImageFormat, quality: Double = Prefs.imageQuality,
+                      properties: [CFString: Any]? = nil) async throws {
+        try await Output.produce(url) {
+            switch format {
+            case .webp:
+                try await writeWebP(image, to: url, quality: quality)
+            case .pdf:
+                try writePDF([image], to: url)
+            default:
+                try encode(image, format: format, quality: quality, properties: properties).write(to: url)
+            }
+        }
+    }
+
+    static func encode(_ image: CGImage, format: ImageFormat, quality: Double, properties: [CFString: Any]? = nil) throws -> Data {
+        guard let type = format.utType else { throw ClementineError.message("\(format.label) can't be encoded directly.") }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, type as CFString, 1, nil) else {
+            throw ClementineError.message("This Mac can't write \(format.label) images.")
+        }
+        let pixels = !format.supportsAlpha && image.hasAlpha ? try flatten(image) : image
+        var options = properties ?? [:]
+        options[kCGImageDestinationLossyCompressionQuality] = quality
+        CGImageDestinationAddImage(destination, pixels, options as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            throw ClementineError.message("Couldn't encode the image as \(format.label).")
+        }
+        return data as Data
+    }
+
+    /// ImageIO can read WebP but not write it, so this goes through `cwebp`.
+    private static func writeWebP(_ image: CGImage, to url: URL, quality: Double) async throws {
+        let cwebp = try ToolLocator.require("cwebp")
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try encode(image, format: .png, quality: 1).write(to: temp)
+        try await ProcessRunner.run(cwebp, ["-quiet", "-q", String(Int(quality * 100)), "-metadata", "icc", temp.path, "-o", url.path])
+    }
+
+    static func writePDF(_ images: [CGImage], to url: URL) throws {
+        let document = PDFDocument()
+        for image in images {
+            let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+            guard let page = PDFPage(image: nsImage) else { throw ClementineError.message("Couldn't build a PDF page.") }
+            document.insert(page, at: document.pageCount)
+        }
+        guard document.write(to: url) else { throw ClementineError.message("Couldn't write \(url.lastPathComponent).") }
+    }
+
+    // MARK: Animation
+
+    struct Frame {
+        let image: CGImage
+        /// Seconds the frame stays on screen.
+        let delay: Double
+    }
+
+    struct Animation {
+        var frames: [Frame]
+        /// 0 loops forever.
+        var loopCount: Int
+    }
+
+    /// Formats whose animations we can both read (ImageIO) and write (ImageIO for GIF, `img2webp` for WebP).
+    static func canAnimate(_ format: ImageFormat?) -> Bool {
+        format == .gif || (format == .webp && ToolLocator.find("img2webp") != nil)
+    }
+
+    /// True for a GIF or WebP with more than one frame.
+    static func isAnimated(_ url: URL) -> Bool {
+        guard ["gif", "webp"].contains(url.pathExtension.lowercased()),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
+        return CGImageSourceGetCount(source) > 1
+    }
+
+    /// Every frame of an animated GIF/WebP, composited to full size, with its delay.
+    static func loadAnimation(_ url: URL) throws -> Animation {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil), CGImageSourceGetCount(source) > 0 else {
+            throw ClementineError.unreadable(url)
+        }
+        let file = CGImageSourceCopyProperties(source, nil) as? [CFString: Any] ?? [:]
+        let loop = (file[kCGImagePropertyGIFDictionary] as? [CFString: Any])?[kCGImagePropertyGIFLoopCount]
+            ?? (file[kCGImagePropertyWebPDictionary] as? [CFString: Any])?[kCGImagePropertyWebPLoopCount]
+        var frames: [Frame] = []
+        for index in 0..<CGImageSourceGetCount(source) {
+            try Task.checkCancellation()
+            guard let image = CGImageSourceCreateImageAtIndex(source, index, nil) else { throw ClementineError.unreadable(url) }
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any] ?? [:]
+            let gif = properties[kCGImagePropertyGIFDictionary] as? [CFString: Any] ?? [:]
+            let webp = properties[kCGImagePropertyWebPDictionary] as? [CFString: Any] ?? [:]
+            let delay = [gif[kCGImagePropertyGIFUnclampedDelayTime], gif[kCGImagePropertyGIFDelayTime],
+                         webp[kCGImagePropertyWebPUnclampedDelayTime], webp[kCGImagePropertyWebPDelayTime]]
+                .lazy.compactMap { $0 as? Double }.first ?? 0
+            // Browsers treat near-zero delays as 0.1 s; do the same so the timing matches what people see.
+            frames.append(Frame(image: image, delay: delay > 0.011 ? delay : 0.1))
+        }
+        return Animation(frames: frames, loopCount: loop as? Int ?? 0)
+    }
+
+    static func writeAnimation(_ animation: Animation, to url: URL, format: ImageFormat,
+                               quality: Double = Prefs.imageQuality) async throws {
+        try await Output.produce(url) {
+            switch format {
+            case .gif: try encodeGIF(animation).write(to: url)
+            case .webp: try await writeAnimatedWebP(animation, to: url, quality: quality)
+            default: throw ClementineError.message("\(format.label) can't hold an animation.")
+            }
+        }
+    }
+
+    private static func encodeGIF(_ animation: Animation) throws -> Data {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "com.compuserve.gif" as CFString, animation.frames.count, nil) else {
+            throw ClementineError.message("This Mac can't write GIF images.")
+        }
+        let file = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: animation.loopCount]]
+        CGImageDestinationSetProperties(destination, file as CFDictionary)
+        for frame in animation.frames {
+            let options = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: frame.delay,
+                                                           kCGImagePropertyGIFUnclampedDelayTime: frame.delay]]
+            CGImageDestinationAddImage(destination, frame.image, options as CFDictionary)
+        }
+        guard CGImageDestinationFinalize(destination) else { throw ClementineError.message("Couldn't encode the animation as GIF.") }
+        return data as Data
+    }
+
+    /// `cwebp` only writes stills, so animations go frame by frame through `img2webp`.
+    private static func writeAnimatedWebP(_ animation: Animation, to url: URL, quality: Double) async throws {
+        let img2webp = try ToolLocator.require("img2webp")
+        let temp = try framesFolder(animation)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        // `-mixed` picks lossy or lossless per frame: GIF-style flat colors stay small, photographic frames stay lossy.
+        var args = ["-loop", String(animation.loopCount), "-mixed", "-q", String(Int(quality * 100))]
+        for (index, frame) in animation.frames.enumerated() {
+            args += ["-d", String(max(Int((frame.delay * 1000).rounded()), 1)), temp.appendingPathComponent("\(index).png").path]
+        }
+        try await ProcessRunner.run(img2webp, args + ["-o", url.path])
+    }
+
+    /// Writes each frame as `0.png`, `1.png`… in a fresh temporary folder.
+    private static func framesFolder(_ animation: Animation, flattened: Bool = false) throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        do {
+            for (index, frame) in animation.frames.enumerated() {
+                try Task.checkCancellation()
+                let pixels = flattened && frame.image.hasAlpha ? try flatten(frame.image) : frame.image
+                try encode(pixels, format: .png, quality: 1).write(to: folder.appendingPathComponent("\(index).png"))
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
+        return folder
+    }
+
+    /// Animated WebP → video. ffmpeg's WebP decoder can't read animations, so ImageIO decodes the frames
+    /// and ffmpeg's concat demuxer plays them back with their original timing.
+    static func animationToVideo(_ input: URL, ext: String, progress: @escaping (Double) -> Void) async throws -> URL {
+        let animation = try loadAnimation(input)
+        let temp = try framesFolder(animation, flattened: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        var list = ""
+        for (index, frame) in animation.frames.enumerated() {
+            list += "file '\(index).png'\nduration \(frame.delay)\n"
+        }
+        // The concat demuxer ignores the last duration unless the final file is listed again.
+        list += "file '\(animation.frames.count - 1).png'\n"
+        let listFile = temp.appendingPathComponent("frames.txt")
+        try list.write(to: listFile, atomically: true, encoding: .utf8)
+        let duration = animation.frames.reduce(0) { $0 + $1.delay }
+        let output = Output.file(beside: input, ext: ext)
+        return try await FFmpeg.transcode(listFile, to: output, inputArgs: ["-f", "concat", "-safe", "0"],
+                                          args: ["-t", String(duration)] + FFmpeg.encodeArgs(ext), duration: duration, progress: progress)
+    }
+
+    // MARK: Drawing helpers
+
+    static func render(width: Int, height: Int, colorSpace: CGColorSpace? = nil, _ draw: (CGContext) -> Void) throws -> CGImage {
+        let space = colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard width > 0, height > 0,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { throw ClementineError.message("Couldn't allocate a \(width)×\(height) image.") }
+        context.interpolationQuality = .high
+        draw(context)
+        guard let image = context.makeImage() else { throw ClementineError.message("Couldn't render the image.") }
+        return image
+    }
+
+    static func flatten(_ image: CGImage, color: CGColor = .white) throws -> CGImage {
+        try render(width: image.width, height: image.height, colorSpace: image.colorSpace) { context in
+            let rect = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+            context.setFillColor(color)
+            context.fill(rect)
+            context.draw(image, in: rect)
+        }
+    }
+
+    static func scaled(_ image: CGImage, by factor: Double) throws -> CGImage {
+        let width = max(Int(Double(image.width) * factor), 1)
+        let height = max(Int(Double(image.height) * factor), 1)
+        return try render(width: width, height: height, colorSpace: image.colorSpace) { context in
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+    }
+
+    static func scaled(_ image: CGImage, maxEdge: Int) throws -> CGImage {
+        let longEdge = max(image.width, image.height)
+        return longEdge > maxEdge ? try scaled(image, by: Double(maxEdge) / Double(longEdge)) : image
+    }
+
+    static func nsImage(_ image: CGImage) -> NSImage {
+        NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+    }
+
+    // MARK: Conversion
+
+    static func convert(_ input: URL, to format: ImageFormat) async throws -> URL {
+        if canAnimate(format), isAnimated(input) {
+            let animation = try loadAnimation(input)
+            let output = Output.file(beside: input, ext: format.ext)
+            try await writeAnimation(animation, to: output, format: format)
+            return output
+        }
+        let loaded = try load(input)
+        let output = Output.file(beside: input, ext: format.ext)
+        try await write(loaded.image, to: output, format: format, properties: loaded.properties)
+        return output
+    }
+
+    /// The format edits are saved in: the original's if we can write it, PNG otherwise.
+    static func editFormat(for loaded: LoadedImage) -> ImageFormat {
+        guard let format = loaded.format, format != .pdf else { return .png }
+        if format == .webp && ToolLocator.find("cwebp") == nil { return .png }
+        return format
+    }
+
+    /// Saves an edited image. Pass `frames` (the same edit) to keep an animated GIF/WebP animated:
+    /// it's applied to every frame instead of saving only the first.
+    static func saveEdit(_ image: CGImage, from input: URL, loaded: LoadedImage, suffix: String,
+                         frames edit: ((CGImage) throws -> CGImage)? = nil) async throws -> URL {
+        let format = editFormat(for: loaded)
+        let output = Output.file(beside: input, suffix: suffix, ext: format.ext)
+        if let edit, canAnimate(format), isAnimated(input) {
+            var animation = try loadAnimation(input)
+            animation.frames = try animation.frames.map { frame in
+                try Task.checkCancellation()
+                return Frame(image: try edit(frame.image), delay: frame.delay)
+            }
+            try await writeAnimation(animation, to: output, format: format)
+            return output
+        }
+        try await write(image, to: output, format: format, properties: loaded.properties)
+        return output
+    }
+
+    // MARK: Vision
+
+    static func recognizeText(_ input: URL) throws -> URL {
+        let image = try load(input).image
+        // Vision rejects images under 3 px on a side with a raw error; there's no text in those anyway.
+        guard image.width > 2, image.height > 2 else {
+            throw ClementineError.message("No text found in \(input.lastPathComponent).")
+        }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        request.automaticallyDetectsLanguage = true
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        guard !lines.isEmpty else { throw ClementineError.message("No text found in \(input.lastPathComponent).") }
+        let output = Output.file(beside: input, ext: "txt")
+        try lines.joined(separator: "\n").write(to: output, atomically: true, encoding: .utf8)
+        return output
+    }
+
+    static func readCodes(_ input: URL) throws -> String {
+        let image = try load(input).image
+        let request = VNDetectBarcodesRequest()
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        let payloads = (request.results ?? []).compactMap(\.payloadStringValue)
+        guard !payloads.isEmpty else { return "No QR code or barcode found in \(input.lastPathComponent)." }
+        var seen = Set<String>()
+        return payloads.filter { seen.insert($0).inserted }.joined(separator: "\n\n")
+    }
+}
+
+extension CGImage {
+    var hasAlpha: Bool {
+        switch alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast: return false
+        default: return true
+        }
+    }
+}

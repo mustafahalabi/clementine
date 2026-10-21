@@ -1,0 +1,8 @@
+.build/
+build/
+.swiftpm/
+*.xcodeproj/
+DerivedData/
+vendor/bin/*
+!vendor/bin/.gitkeep
+.DS_Store
