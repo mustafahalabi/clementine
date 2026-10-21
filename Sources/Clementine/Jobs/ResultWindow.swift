@@ -10,7 +10,7 @@ enum ResultWindow {
         let window = FocusablePanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 420), resizable: true)
         window.title = title
         window.minSize = NSSize(width: 380, height: 280)
-        window.contentView = NSHostingView(rootView: ResultView(title: title, text: body))
+        window.host(ResultView(title: title, text: body), sizing: [.minSize])
         window.center()
         windows.append(window)
         var token: NSObjectProtocol?

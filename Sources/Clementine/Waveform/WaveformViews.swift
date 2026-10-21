@@ -410,9 +410,7 @@ enum EditorWindow {
                                        content: (_ close: @escaping () -> Void) -> Content) {
         let window = FocusablePanel()
         window.title = title
-        let host = NSHostingController(rootView: content({ [weak window] in window?.close() }))
-        host.sizingOptions = .preferredContentSize
-        window.contentViewController = host
+        window.host(content({ [weak window] in window?.close() }))
         window.center()
         windows.append(window)
         let id = ObjectIdentifier(window)

@@ -47,7 +47,7 @@ enum PageOrganizer {
                                          apply(spec)
                                      },
                                      onCancel: { [weak window] in window?.close() })
-        window.contentView = NSHostingView(rootView: view)
+        window.host(view, sizing: [.minSize])
         window.center()
         windows.append(window)
         Task {

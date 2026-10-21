@@ -20,10 +20,7 @@ enum OnboardingWindow {
         if window == nil {
             let window = FocusablePanel()
             window.title = "Welcome to Clementine" // hidden, but used by Mission Control and VoiceOver
-            let host = NSHostingController(rootView: OnboardingView(onFinish: { OnboardingWindow.window?.close() }))
-            host.sizingOptions = .preferredContentSize
-            window.contentViewController = host
-            window.level = .normal
+            window.host(OnboardingView(onFinish: { OnboardingWindow.window?.close() }))
             window.center()
             self.window = window
         }

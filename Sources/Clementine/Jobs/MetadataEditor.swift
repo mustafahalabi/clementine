@@ -28,7 +28,7 @@ enum MetadataEditor {
                                           window?.close()
                                           apply(defaults)
                                       })
-        window.contentView = NSHostingView(rootView: view)
+        window.host(view, sizing: [.minSize])
         window.center()
         windows.append(window)
         Task {

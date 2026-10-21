@@ -11,9 +11,7 @@ enum SettingsWindow {
         if window == nil {
             let window = FocusablePanel()
             window.title = "Clementine Settings" // hidden, but used by Mission Control and VoiceOver
-            let host = NSHostingController(rootView: SettingsView())
-            host.sizingOptions = .preferredContentSize
-            window.contentViewController = host
+            window.host(SettingsView())
             window.center()
             window.delegate = anchor
             self.window = window

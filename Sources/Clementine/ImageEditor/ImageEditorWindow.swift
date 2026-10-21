@@ -24,9 +24,7 @@ enum ImageEditorWindow {
             window?.close()
             if let values { apply(values) }
         }
-        let host = NSHostingController(rootView: content(image, finish))
-        host.sizingOptions = []
-        window.contentViewController = host
+        window.host(content(image, finish), sizing: [])
         window.contentMinSize = NSSize(width: 820, height: 540)
         window.setContentSize(initialSize(for: image.pixelSize))
         window.center()

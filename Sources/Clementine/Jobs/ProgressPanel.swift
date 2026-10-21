@@ -19,7 +19,7 @@ final class ProgressPanel: NSObject, NSWindowDelegate {
         let taken = Set(open.map(\.slot))
         panel.slot = (0...).first { !taken.contains($0) }!
         open.append(panel)
-        if let content = panel.window.contentViewController?.view {
+        if let content = panel.window.contentView {
             panel.window.setContentSize(content.fittingSize) // size before placing, or it's placed as 0×0
         }
         panel.place()
@@ -42,10 +42,7 @@ final class ProgressPanel: NSObject, NSWindowDelegate {
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
         window.delegate = self
-        let host = NSHostingController(rootView: JobView(job: job, cancel: { [weak self] in self?.cancel() },
-                                                         dismiss: { [weak self] in self?.close() }))
-        host.sizingOptions = .preferredContentSize
-        window.contentViewController = host
+        window.host(JobView(job: job, cancel: { [weak self] in self?.cancel() }, dismiss: { [weak self] in self?.close() }))
     }
 
     /// Slides the card off to the right, then closes it.

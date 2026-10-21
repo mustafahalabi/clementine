@@ -15,9 +15,7 @@ enum ParameterWindow {
                                      apply(values)
                                  },
                                  onCancel: { [weak window] in window?.close() })
-        let host = NSHostingController(rootView: form)
-        host.sizingOptions = .preferredContentSize
-        window.contentViewController = host
+        window.host(form)
         window.center()
         windows.append(window)
         var token: NSObjectProtocol?
