@@ -29,7 +29,11 @@ final class JobRunner {
 
     func start(_ action: Action, urls: [URL]) {
         guard !urls.isEmpty else { return }
-        if action.parameters.isEmpty {
+        if let editor = action.editor {
+            editor(urls, action.defaults) { [weak self] values in
+                self?.execute(action, urls: urls, params: values)
+            }
+        } else if action.parameters.isEmpty {
             execute(action, urls: urls, params: action.defaults)
         } else {
             ParameterWindow.present(action: action, urls: urls) { [weak self] values in
