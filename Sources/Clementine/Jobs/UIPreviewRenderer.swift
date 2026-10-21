@@ -71,6 +71,7 @@ enum UIPreview {
                        appearance: appearance, to: out("result-metadata"))
 
         snapshotWindow(NSHostingController(rootView: SettingsView()), appearance: appearance, to: out("settings"))
+        renderImageEditors(appearance: appearance, out: out)
     }
 
     /// Draws a view hierarchy into a PNG.
@@ -100,6 +101,119 @@ enum UIPreview {
         view.cacheDisplay(in: view.bounds, to: bitmap)
         try? bitmap.representation(using: .png, properties: [:])?.write(to: url)
         print(url.path)
+    }
+}
+
+// MARK: Image editors
+
+extension UIPreview {
+    /// Crop, Redact and Annotate in typical mid-edit states, on a generated picture with a face-free scene and text.
+    fileprivate static func renderImageEditors(appearance: NSAppearance, out: (String) -> URL) {
+        guard let url = demoPicture(), let image = try? EditorImage.load(url) else { return }
+        let editorSize = CGSize(width: 1000, height: 720)
+
+        let crop = CropModel(source: image)
+        crop.setAspect(.standard)
+        crop.rect = CGRect(x: 260, y: 150, width: 960, height: 720)
+        crop.drag = .handle(.bottomRight, from: crop.rect)
+        crop.hover = .bottomRight
+        snapshotEditor(CropEditorView(model: crop, onApply: { _ in }, onCancel: {}), size: editorSize, appearance: appearance, to: out("editor-crop"))
+
+        let turned = CropModel(source: image)
+        turned.turn(1, animated: false)
+        turned.rect = CGRect(x: 120, y: 200, width: 760, height: 900)
+        turned.hover = .move
+        snapshotEditor(CropEditorView(model: turned, onApply: { _ in }, onCancel: {}), size: CGSize(width: 900, height: 760),
+                       appearance: appearance, to: out("editor-crop-turned"))
+        turned.spin = -45 // midway through a quarter turn
+        snapshotEditor(CropEditorView(model: turned, onApply: { _ in }, onCancel: {}), size: CGSize(width: 900, height: 760),
+                       appearance: appearance, to: out("editor-crop-turning"))
+
+        let redact = RedactModel(source: image)
+        redact.boxes = [.init(rect: CGRect(x: 1090, y: 180, width: 300, height: 300))]
+        Task { await redact.autoDetect(animation: nil) }
+        RunLoop.main.run(until: Date().addingTimeInterval(2.5)) // Vision
+        redact.selection = redact.boxes.first?.id
+        redact.hover = redact.boxes.first.map { .init(id: $0.id, handle: .topRight) }
+        snapshotEditor(RedactEditorView(model: redact, onApply: { _ in }, onCancel: {}), size: editorSize, appearance: appearance,
+                       settle: 1.2, to: out("editor-redact"))
+        redact.style = .blur
+        redact.selection = nil
+        redact.notice = nil
+        snapshotEditor(RedactEditorView(model: redact, onApply: { _ in }, onCancel: {}), size: editorSize, appearance: appearance,
+                       settle: 1.2, to: out("editor-redact-blur"))
+
+        let annotate = AnnotateModel(source: image)
+        typealias Mark = ImageEdits.Annotation
+        let marks = [
+            Mark(kind: .highlighter, points: [CGPoint(x: 120, y: 760), CGPoint(x: 700, y: 760)], color: "#FFD43B", width: 18),
+            Mark(kind: .arrow, points: [CGPoint(x: 900, y: 860), CGPoint(x: 1150, y: 560)], color: "#FF5E3A", width: 14),
+            Mark(kind: .ellipse, points: [CGPoint(x: 1060, y: 160), CGPoint(x: 1420, y: 500)], color: "#FF9A3C", width: 12),
+            Mark(kind: .rectangle, points: [CGPoint(x: 90, y: 640), CGPoint(x: 760, y: 900)], color: "#0A84FF", width: 10),
+            Mark(kind: .pen, points: stride(from: 0.0, through: 1, by: 0.05).map { t in
+                CGPoint(x: 180 + t * 520, y: 520 + sin(t * .pi * 3) * 40) }, color: "#34C77B", width: 10),
+            Mark(kind: .text, points: [CGPoint(x: 880, y: 880)], color: "#FF5E3A", width: 64, text: "Ship it!"),
+        ]
+        annotate.setTool(.select)
+        annotate.items = marks
+        annotate.selection = marks[2].id
+        annotate.hover = marks[1].id
+        snapshotEditor(AnnotateEditorView(model: annotate, onApply: { _ in }, onCancel: {}), size: editorSize, appearance: appearance,
+                       to: out("editor-annotate"))
+        annotate.setTool(.text)
+        annotate.typing = .init(origin: CGPoint(x: 120, y: 120), text: "Before → after")
+        snapshotEditor(AnnotateEditorView(model: annotate, onApply: { _ in }, onCancel: {}), size: editorSize, appearance: appearance,
+                       to: out("editor-annotate-typing"))
+    }
+
+    private static func snapshotEditor(_ view: some View, size: CGSize, appearance: NSAppearance, settle: TimeInterval = 0.6, to url: URL) {
+        let host = NSHostingController(rootView: view)
+        let window = FocusablePanel(resizable: true)
+        window.appearance = appearance
+        host.sizingOptions = []
+        window.contentViewController = host
+        window.setContentSize(size)
+        RunLoop.main.run(until: Date().addingTimeInterval(settle))
+        window.contentView?.layoutSubtreeIfNeeded()
+        write(window.contentView?.superview ?? host.view, to: url)
+        window.close()
+    }
+
+    /// A 1600×1000 scene: sunset gradient, hills, and a receipt card with a name and numbers to redact.
+    private static func demoPicture() -> URL? {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("clementine-editor-demo.png")
+        guard let image = try? ImageEngine.render(width: 1600, height: 1000, { context in
+            let space = CGColorSpace(name: CGColorSpace.sRGB)!
+            let sky = CGGradient(colorsSpace: space, colors: [CGColor(srgbRed: 0.98, green: 0.55, blue: 0.32, alpha: 1),
+                                                               CGColor(srgbRed: 0.99, green: 0.84, blue: 0.62, alpha: 1),
+                                                               CGColor(srgbRed: 0.55, green: 0.72, blue: 0.86, alpha: 1)] as CFArray,
+                                 locations: [0, 0.45, 1])!
+            context.drawLinearGradient(sky, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: 1000), options: [])
+            context.setFillColor(CGColor(srgbRed: 1, green: 0.93, blue: 0.75, alpha: 1))
+            context.fillEllipse(in: CGRect(x: 1080, y: 520, width: 320, height: 320))
+            for (index, color) in [(0.36, 0.52, 0.42), (0.24, 0.40, 0.33)].enumerated() {
+                context.setFillColor(CGColor(srgbRed: color.0, green: color.1, blue: color.2, alpha: 1))
+                context.move(to: CGPoint(x: 0, y: 0))
+                for x in stride(from: 0, through: 1600, by: 20) {
+                    context.addLine(to: CGPoint(x: Double(x), y: 330 - Double(index) * 110 + sin(Double(x) / (220 - Double(index) * 60)) * 70))
+                }
+                context.addLine(to: CGPoint(x: 1600, y: 0))
+                context.fillPath()
+            }
+            // The card (drawing with AppKit for text).
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+            let card = NSBezierPath(roundedRect: NSRect(x: 90, y: 90, width: 680, height: 290), xRadius: 22, yRadius: 22)
+            NSColor(white: 1, alpha: 0.96).setFill()
+            card.fill()
+            let title: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 44, weight: .bold), .foregroundColor: NSColor(white: 0.12, alpha: 1)]
+            let body: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 34, weight: .regular), .foregroundColor: NSColor(white: 0.25, alpha: 1)]
+            NSAttributedString(string: "Boarding pass", attributes: title).draw(at: NSPoint(x: 130, y: 290))
+            NSAttributedString(string: "Passenger  Jane Appleseed", attributes: body).draw(at: NSPoint(x: 130, y: 215))
+            NSAttributedString(string: "Booking  QX7-4815-1623", attributes: body).draw(at: NSPoint(x: 130, y: 150))
+            NSGraphicsContext.restoreGraphicsState()
+        }), let data = try? ImageEngine.encode(image, format: .png, quality: 1), (try? data.write(to: url)) != nil else { return nil }
+        return url
     }
 }
 #endif
