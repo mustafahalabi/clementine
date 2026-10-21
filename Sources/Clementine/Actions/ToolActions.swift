@@ -142,7 +142,7 @@ enum ToolActions {
 
     static let pdf: [Action] = [
         Action(id: "tool.pdf.pages", title: "Pages", symbol: "doc.on.doc", mode: .tools,
-               parameters: [.text("pages", "Pages to keep, in order", placeholder: "3, 1-2, 5-")],
+               parameters: [.text("pages", "Pages to keep, in order", placeholder: "3r90, 1-2, 5-")],
                accepts: kinds(.pdf),
                run: { ctx in .files([try PDFEngine.pick(ctx.input, spec: ctx.params.text("pages"))]) }),
         Action(id: "tool.pdf.split", title: "Split", symbol: "scissors", mode: .tools,
@@ -153,8 +153,9 @@ enum ToolActions {
                accepts: kinds(.pdf),
                run: { ctx in .files([try PDFEngine.rotate(ctx.input, choice: ctx.params.choice("rotation"))]) }),
         Action(id: "tool.pdf.merge", title: "Merge", symbol: "square.stack", mode: .tools, minInputs: 2, batch: true,
+               parameters: [.text("pages", "Pages (all when empty)", placeholder: "1:1-3, 2:1r90")],
                accepts: kinds(.pdf),
-               run: { ctx in .files([try PDFEngine.merge(ctx.inputs)]) }),
+               run: { ctx in .files([try PDFEngine.merge(ctx.inputs, spec: ctx.params.text("pages"))]) }),
     ]
 
     // MARK: Metadata
