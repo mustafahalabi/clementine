@@ -39,7 +39,13 @@ You can also open `Package.swift` in Xcode.
 - **Audio:** Compress, Target Size, Trim, Speed, Split, Normalize (EBU R128), Trim Silence, Channels (mono/stereo), Bleep (time ranges), Metadata, Remove Metadata. With 2+ files: Join.
 - **PDF:** Compress, Pages (keep/reorder, e.g. `3, 1-2, 5-`), Split, Rotate, Metadata, Remove Metadata. With 2+ files: Merge.
 
-Dropping several files runs the action on each, or once on all of them for batch tools like Join, Merge and Collage. Each job gets a small progress window, and finished files are revealed in Finder. Dropping on the middle of the wheel cancels.
+Dropping several files runs the action on each (several at once: up to half your cores for images and documents, two for ffmpeg work), or once on all of them for batch tools like Join, Merge and Collage. Each job gets a small progress window, and finished files are revealed in Finder. Dropping on the middle of the wheel cancels.
+
+**Without dragging:** right-click files in Finder › Services › **Convert with Clementine** or **Clementine Tools**, or use **Open Files…** in the menu bar. The wheel opens in click mode: hover and click a slice, Tab (or the mode chip) switches wheels, arrows and Return work too, Esc or a click on the hub or elsewhere closes it.
+
+**Your wheel:** slices you use most move to the front, per kind of file and wheel (frecency: uses fade with a two-week half-life; ties keep the catalog order). Settings › Wheel hides slices you never use, with a live preview, and resets everything.
+
+**History & undo:** the menu bar's **Recent** submenu lists the last jobs (click to reveal the files), **Undo Last Conversion** moves the newest job's files to the Trash, and each finished progress card offers **Undo** for a few seconds (hover to keep it open). The last 50 jobs are kept in `~/Library/Application Support/Clementine/history.json`.
 
 ## How it works
 
@@ -51,7 +57,7 @@ Sources/Clementine/
   Actions/    Action model + registry; ConvertActions and ToolActions are the catalog
   Engines/    ImageEngine/ImageTools (ImageIO, Core Image, Vision), PDFEngine (PDFKit),
               DocumentEngine (AppKit text system), MediaEngine/FFmpeg, ArchiveEngine, SubtitleEngine
-  Jobs/       JobRunner, progress / parameter / result windows
+  Jobs/       JobRunner, BatchRunner (parallel units), History, progress / parameter / result windows
 ```
 
 - **Spotting drags:** a global mouse-down monitor (no Accessibility permission needed) starts a 30 Hz poll while the button is held. When the shared drag pasteboard's change count bumps and it holds file URLs, a drag is underway. If ⇧ is down, the wheel opens under the pointer.
@@ -66,9 +72,13 @@ BIN=.build/debug/Clementine
 $BIN --list photo.heic                                   # which actions apply
 $BIN --run convert.image.webp photo.heic
 $BIN --run tool.fit --set megabytes=2 clip.mov
+$BIN --run convert.image.jpeg *.png --record               # parallel, like the app; --record logs usage + history
+$BIN --history                                           # also --undo, --clear-history
 $BIN --render-wheel /tmp/wheel.png --tools --hover 3 clip.mov   # draw the wheel to a PNG
-build/Clementine.app/Contents/MacOS/Clementine --demo-wheel --tools clip.mov  # live wheel, no drag
+build/Clementine.app/Contents/MacOS/Clementine --demo-wheel --tools clip.mov  # live wheel, no drag (--click for click mode)
 ```
+
+`--list` shows each wheel as it would appear, with hidden slices marked. Debug builds read `CLEMENTINE_DEFAULTS_SUITE` and `CLEMENTINE_SUPPORT_DIR` so tests use scratch settings and history (the unbundled binary otherwise uses the `Clementine` defaults domain); `scripts/test-productivity.sh` covers ordering, hiding, history, undo and parallel batches.
 
 ## Known limits / roadmap
 

@@ -28,6 +28,8 @@ struct ClementineApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         WheelController.shared.start()
+        ServiceProvider.register()
+        HistoryStore.shared.startClock()
     }
 }
 
@@ -39,6 +41,8 @@ private struct MenuContent: View {
         Divider()
         Text("Hold ⇧ while dragging to convert")
         Text("Hold ⌥⇧ while dragging for tools")
+        Divider()
+        HistoryMenu()
         Divider()
         Button("Settings…") { SettingsWindow.show() }
             .keyboardShortcut(",")

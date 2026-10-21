@@ -22,22 +22,50 @@ final class WheelController {
     }
 
     /// Shows the wheel without a drag, for working on its looks:
-    /// `Clementine.app/Contents/MacOS/Clementine --demo-wheel [--tools] [--hover N] file…`
+    /// `Clementine.app/Contents/MacOS/Clementine --demo-wheel [--tools] [--click] [--hover N] file…`
     private func demo(_ arguments: [String]) {
         var mode = WheelMode.convert
         var hovered: Int?
+        var clickable = false
         var urls: [URL] = []
         var rest = arguments[...]
         while let argument = rest.popFirst() {
             switch argument {
             case "--tools": mode = .tools
+            case "--click": clickable = true
             case "--hover": hovered = rest.popFirst().flatMap { Int($0) }
             default: urls.append(URL(fileURLWithPath: argument).standardizedFileURL)
             }
         }
         guard !urls.isEmpty, let screen = NSScreen.main?.frame else { return }
-        panel.show(urls: urls, mode: mode, at: NSPoint(x: screen.midX, y: screen.midY))
+        let center = NSPoint(x: screen.midX, y: screen.midY)
+        if clickable { return panel.showClickable(urls: urls, mode: mode, at: center) }
+        panel.show(urls: urls, mode: mode, at: center)
         panel.highlight(hovered)
+    }
+
+    /// The wheel in click mode, for files that didn't arrive by drag (Services, Open Files…). Defaults to the pointer.
+    func showClickable(_ urls: [URL], mode: WheelMode, at point: NSPoint? = nil) {
+        guard !urls.isEmpty else { return }
+        panel.showClickable(urls: urls, mode: mode, at: point ?? NSEvent.mouseLocation)
+    }
+
+    /// Menu bar › Open Files…: pick files, then choose what to do with them on a click-mode wheel at screen center.
+    func openFiles() {
+        let open = NSOpenPanel()
+        open.title = "Open Files"
+        open.message = "Choose files to convert or edit"
+        open.prompt = "Choose"
+        open.allowsMultipleSelection = true
+        open.canChooseDirectories = true
+        open.canChooseFiles = true
+        NSApp.activate()
+        guard open.runModal() == .OK, !open.urls.isEmpty else { return }
+        let screen = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
+        // Let the open panel finish closing so it doesn't take key status back from the wheel.
+        DispatchQueue.main.async {
+            self.showClickable(open.urls, mode: .convert, at: NSPoint(x: screen.midX, y: screen.midY))
+        }
     }
 
     private func handle(_ event: DragMonitor.Event) {
