@@ -6,6 +6,8 @@ enum FFmpeg {
         var probed = false
         var duration: Double?
         var hasAudio = false
+        /// Channel count of the first audio stream.
+        var audioChannels = 0
         var hasVideo = false
         var width = 0
         var height = 0
@@ -19,7 +21,7 @@ enum FFmpeg {
         guard let ffprobe = ToolLocator.find("ffprobe"),
               let result = try? await ProcessRunner.run(ffprobe, [
                   "-v", "error",
-                  "-show_entries", "format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate:stream_disposition=attached_pic",
+                  "-show_entries", "format=duration:stream=codec_type,codec_name,channels,width,height,avg_frame_rate:stream_disposition=attached_pic",
                   "-of", "json", url.path,
               ]),
               let json = try? JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any]
@@ -32,6 +34,7 @@ enum FFmpeg {
         for stream in json["streams"] as? [[String: Any]] ?? [] {
             switch stream["codec_type"] as? String {
             case "audio":
+                if !info.hasAudio { info.audioChannels = stream["channels"] as? Int ?? 0 }
                 info.hasAudio = true
             case "video":
                 // Cover art in audio files shows up as a single-frame "attached picture" video stream.
@@ -136,6 +139,18 @@ enum FFmpeg {
         if !video.isEmpty && !args.contains("-vn") { args += ["-vf", video.joined(separator: ",")] }
         if !af.isEmpty { args += ["-af", af.joined(separator: ",")] }
         return args
+    }
+
+    /// Just the audio codec settings (and MP4/MOV's faststart) from `encodeArgs`, for jobs that copy the video.
+    static func audioArgs(_ encodeArgs: [String]) -> [String] {
+        var result: [String] = []
+        var index = 0
+        while index + 1 < encodeArgs.count {
+            let key = encodeArgs[index]
+            if key.hasSuffix(":a") || key == "-movflags" || key == "-strict" { result += [key, encodeArgs[index + 1]] }
+            index += 2
+        }
+        return result
     }
 
     /// Maps all video (minus cover art), audio and the subtitles `ext` can hold, converting text subtitles as needed.

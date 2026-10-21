@@ -270,34 +270,66 @@ enum MediaEngine {
         return try await audioFilter(input, suffix: "trimmed", filters: [edge, "areverse", edge, "areverse"], progress: progress)
     }
 
-    static func channels(_ input: URL, mono: Bool, progress: @escaping Progress) async throws -> URL {
-        try await audioFilter(input, suffix: mono ? "mono" : "stereo", filters: [], extra: ["-ac", mono ? "1" : "2"], progress: progress)
+    enum ChannelLayout: Int {
+        case mono, stereo, swap
+
+        static let names = ["Mono", "Stereo", "Swap"]
     }
 
-    /// Mutes each range and lays a 1 kHz tone over it.
-    static func bleep(_ input: URL, ranges spec: String, progress: @escaping Progress) async throws -> URL {
+    /// Mixes down to mono, keeps stereo, or swaps left and right, with a gain (1 = unchanged) per side.
+    /// Mono input feeds both sides; more than two channels are downmixed to stereo first.
+    static func channels(_ input: URL, layout: ChannelLayout, left: Double = 1, right: Double = 1, to output: URL? = nil,
+                         progress: @escaping Progress) async throws -> URL {
+        let info = try await FFmpeg.readable(input)
+        if info.probed, !info.hasAudio { throw ClementineError.message("\(input.lastPathComponent) has no audio track.") }
+        // pan takes one factor per term and each input channel once per output; mono averages the two sides.
+        let (l, r) = (min(max(left, 0), 4), min(max(right, 0), 4))
+        func gain(_ value: Double) -> String { String(format: "%.4f", value) }
+        let gains = layout == .mono ? [gain(l / 2), gain(r / 2)] : [gain(l), gain(r)]
+        let sources = info.audioChannels == 1 ? ["c0", "c0"] : ["c0", "c1"]
+        let pan = switch layout {
+        case .mono where info.audioChannels == 1: "pan=mono|c0=\(gain((l + r) / 2))*c0"
+        case .mono: "pan=mono|c0=\(gains[0])*\(sources[0])+\(gains[1])*\(sources[1])"
+        case .stereo: "pan=stereo|c0=\(gains[0])*\(sources[0])|c1=\(gains[1])*\(sources[1])"
+        case .swap: "pan=stereo|c0=\(gains[0])*\(sources[1])|c1=\(gains[1])*\(sources[0])"
+        }
+        let filters = (info.audioChannels > 2 ? ["aformat=channel_layouts=stereo"] : []) + [pan]
+        let suffix = layout == .swap ? "swapped" : layout == .mono ? "mono" : "stereo"
+        return try await audioFilter(input, suffix: suffix, filters: filters, extra: ["-ac", layout == .mono ? "1" : "2"],
+                                     to: output, progress: progress)
+    }
+
+    /// Mutes each range and lays a 1 kHz tone over it. Video is copied untouched; only the sound is re-encoded.
+    static func bleep(_ input: URL, ranges spec: String, to output: URL? = nil, progress: @escaping Progress) async throws -> URL {
         guard let ranges = TimeCode.ranges(spec) else {
             throw ClementineError.message("Write ranges like 0:05-0:06, 1:10-1:12.")
         }
         let windows = ranges.map { "between(t,\(TimeCode.ffmpeg($0.lowerBound)),\(TimeCode.ffmpeg($0.upperBound)))" }.joined(separator: "+")
         let graph = [
-            "[0:a]volume=volume=0:enable='\(windows)'[muted]",
+            "[0:a:0]volume=volume=0:enable='\(windows)'[muted]",
             "sine=frequency=1000:sample_rate=48000,volume=volume=0.25,volume=volume=0:enable='not(\(windows))'[tone]",
             "[muted][tone]amix=inputs=2:duration=first:normalize=0[out]",
         ].joined(separator: ";")
-        _ = try await FFmpeg.readable(input)
-        let ext = input.pathExtension.lowercased()
-        let output = Output.file(beside: input, suffix: "bleeped", ext: ext)
-        return try await FFmpeg.transcode(input, to: output, args: ["-filter_complex", graph, "-map", "[out]"] + FFmpeg.encodeArgs(ext),
-                                          progress: progress)
+        let info = try await FFmpeg.readable(input)
+        if info.probed, !info.hasAudio { throw ClementineError.message("\(input.lastPathComponent) has no audio track.") }
+        let output = output ?? Output.file(beside: input, suffix: "bleeped", ext: input.pathExtension.lowercased())
+        let encode = FFmpeg.encodeArgs(output.pathExtension.lowercased())
+        var args = ["-filter_complex", graph]
+        if info.hasVideo && !encode.contains("-vn") {
+            // Keep the picture as it is and re-encode just the soundtrack with the container's usual audio codec.
+            args += ["-map", "0:V?", "-map", "[out]", "-c:v", "copy"] + FFmpeg.audioArgs(encode)
+        } else {
+            args += ["-map", "[out]"] + encode
+        }
+        return try await FFmpeg.transcode(input, to: output, args: args, duration: info.duration, progress: progress)
     }
 
-    private static func audioFilter(_ input: URL, suffix: String, filters: [String], extra: [String] = [],
+    private static func audioFilter(_ input: URL, suffix: String, filters: [String], extra: [String] = [], to output: URL? = nil,
                                     progress: @escaping Progress) async throws -> URL {
         _ = try await FFmpeg.readable(input)
-        let ext = input.pathExtension.lowercased()
-        let output = Output.file(beside: input, suffix: suffix, ext: ext)
-        return try await FFmpeg.transcode(input, to: output, args: FFmpeg.encodeArgs(ext, af: filters) + extra, progress: progress)
+        let output = output ?? Output.file(beside: input, suffix: suffix, ext: input.pathExtension.lowercased())
+        return try await FFmpeg.transcode(input, to: output, args: FFmpeg.encodeArgs(output.pathExtension.lowercased(), af: filters) + extra,
+                                          progress: progress)
     }
 
     // MARK: Metadata
