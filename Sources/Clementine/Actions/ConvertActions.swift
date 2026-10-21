@@ -14,7 +14,7 @@ enum ConvertActions {
         Action(id: "convert.image.txt", title: "TXT", mode: .convert,
                accepts: { $0.kind == .image && $0.ext != "svg" },
                run: { ctx in .files([try ImageEngine.recognizeText(ctx.input)]) }),
-        Action(id: "convert.image.mp4", title: "MP4", mode: .convert,
+        Action(id: "convert.image.mp4", title: "MP4", mode: .convert, maxConcurrent: 2, // ffmpeg
                accepts: { $0.ext == "gif" || ($0.ext == "webp" && ImageEngine.isAnimated($0.url)) },
                run: { ctx in
                    // ffmpeg can't decode animated WebP, so those frames come from ImageIO.

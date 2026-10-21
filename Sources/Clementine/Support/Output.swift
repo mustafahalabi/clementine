@@ -30,13 +30,34 @@ enum Output {
         func make(_ name: String) -> URL {
             dir.appendingPathComponent(ext.isEmpty ? name : "\(name).\(ext)")
         }
-        var candidate = make(base)
-        var n = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = make("\(base) \(n)")
-            n += 1
+        return reservations.withLock { reserved in
+            var candidate = make(base)
+            var n = 2
+            while FileManager.default.fileExists(atPath: candidate.path) || reserved.contains(candidate.path) {
+                candidate = make("\(base) \(n)")
+                n += 1
+            }
+            if batches > 0 { reserved.insert(candidate.path) }
+            return candidate
         }
-        return candidate
+    }
+
+    // MARK: Reservations
+
+    /// Names handed out while files run in parallel, so `photo.png` and `photo.heic` → JPG can't both pick
+    /// `photo.jpg` before either is written. Cleared once no batch is running.
+    private static let reservations = Locked(Set<String>())
+    nonisolated(unsafe) private static var batches = 0
+
+    static func beginBatch() {
+        reservations.withLock { _ in batches += 1 }
+    }
+
+    static func endBatch() {
+        reservations.withLock { reserved in
+            batches -= 1
+            if batches == 0 { reserved.removeAll() }
+        }
     }
 
     /// Like `produce`, for an output folder that may not exist (single-file results need no cleanup here).
@@ -53,5 +74,19 @@ enum Output {
             try? FileManager.default.removeItem(at: url)
             throw error
         }
+    }
+}
+
+/// A value guarded by a lock, for state shared between parallel units of work.
+final class Locked<Value>: @unchecked Sendable {
+    private var value: Value
+    private let lock = NSLock()
+
+    init(_ value: Value) { self.value = value }
+
+    func withLock<T>(_ body: (inout Value) throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body(&value)
     }
 }
