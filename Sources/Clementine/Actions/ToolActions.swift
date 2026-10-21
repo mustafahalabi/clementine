@@ -161,9 +161,15 @@ enum ToolActions {
     // MARK: Metadata
 
     static let metadata: [Action] = [
+        // With `fields` (JSON edits, see MetadataEngine) it saves an edited copy; without, it shows everything.
         Action(id: "tool.metadata", title: "Metadata", symbol: "tag", mode: .tools,
+               parameters: [.text("fields", "Fields (JSON)", placeholder: "{\"title\": \"Holiday\"}")],
                accepts: kinds(.image, .video, .audio, .pdf),
                run: { ctx in
+                   let fields = ctx.params.text("fields")
+                   if !fields.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                       return .files([try await MetadataEngine.write(ctx.input, json: fields)])
+                   }
                    let body: String
                    switch FileItem(url: ctx.input).kind {
                    case .image: body = try ImageTools.metadata(ctx.input)
