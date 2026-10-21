@@ -84,7 +84,10 @@ expect() {
   local name="$1"; shift
   local check=(); while [[ "$1" != "--" ]]; do check+=("$1"); shift; done; shift
   local out
-  if ! out="$("$BIN" --run "$@" 2>&1)"; then bad "$name" "$out"; return; fi
+  # Output paths come from stdout only: system frameworks sometimes log noise to stderr (e.g. on CI VMs).
+  local err; err="$(mktemp)"
+  if ! out="$("$BIN" --run "$@" 2>"$err")"; then bad "$name" "$(cat "$err") $out"; rm -f "$err"; return; fi
+  rm -f "$err"
   OUT="$(echo "$out" | head -1)"
   if eval "${check[*]}"; then ok "$name"; else bad "$name" "assertion failed: ${check[*]} (output: $OUT)"; fi
 }
