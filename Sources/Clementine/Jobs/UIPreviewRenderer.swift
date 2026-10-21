@@ -71,6 +71,12 @@ enum UIPreview {
                        appearance: appearance, to: out("result-metadata"))
 
         snapshotWindow(NSHostingController(rootView: SettingsView()), appearance: appearance, to: out("settings"))
+
+        // Welcome tour, one PNG per page (demo frozen on a hovered slice).
+        for page in 0..<OnboardingView.pageCount {
+            snapshotWindow(NSHostingController(rootView: OnboardingView(initialStep: page, live: false)),
+                           appearance: appearance, settle: 1.2, to: out("onboarding-\(page + 1)"))
+        }
     }
 
     /// Draws a view hierarchy into a PNG.

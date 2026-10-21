@@ -36,6 +36,18 @@ final class WheelModel: ObservableObject {
         requestThumbnail(for: urls[0])
     }
 
+    /// Shows a fixed set of slices without looking at real files (the welcome window's live demo).
+    /// Nothing here touches the file system; dropping isn't possible since the view isn't a drop target.
+    func loadDemo(actions: [Action], mode: WheelMode, summary: String, thumbnail: NSImage?) {
+        urls = []
+        self.mode = mode
+        session += 1
+        hovered = nil
+        self.actions = actions
+        self.summary = summary
+        self.thumbnail = thumbnail
+    }
+
     func setMode(_ mode: WheelMode) {
         guard mode != self.mode else { return }
         withAnimation(Theme.spring) {

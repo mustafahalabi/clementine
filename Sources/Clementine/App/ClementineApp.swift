@@ -28,6 +28,8 @@ struct ClementineApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         WheelController.shared.start()
+        Updater.start()
+        OnboardingWindow.showIfFirstLaunch()
     }
 }
 
@@ -42,6 +44,8 @@ private struct MenuContent: View {
         Divider()
         Button("Settings…") { SettingsWindow.show() }
             .keyboardShortcut(",")
+        Button("Show Welcome…") { OnboardingWindow.show() }
+        Button("Check for Updates…") { Updater.shared.checkForUpdates() }
         Button("Quit Clementine") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
     }
