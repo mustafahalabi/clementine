@@ -14,6 +14,9 @@ final class RunningJob: ObservableObject {
     /// nil shows an indeterminate bar.
     @Published var progress: Double?
     @Published var state: State = .running
+    /// Set once a finished job's files are in history: moves them to the Trash.
+    @Published var undo: (() -> Void)?
+    @Published var undone = false
     var task: Task<Void, Never>?
 
     init(title: String, symbol: String, detail: String) {
@@ -42,36 +45,25 @@ final class JobRunner {
         }
     }
 
+    static func title(for action: Action) -> String {
+        action.mode == .convert ? "Convert to \(action.title)" : action.title
+    }
+
     func execute(_ action: Action, urls: [URL], params: ParamValues) {
-        let units = action.batch ? [urls] : urls.map { [$0] }
-        let job = RunningJob(title: action.mode == .convert ? "Convert to \(action.title)" : action.title,
+        let count = BatchRunner.units(for: action, urls: urls).count
+        let job = RunningJob(title: Self.title(for: action),
                       symbol: action.symbol ?? "arrow.triangle.2.circlepath",
                       detail: urls.count == 1 ? urls[0].lastPathComponent : "\(urls.count) files")
         let panel = ProgressPanel.show(job)
+        ActionUsage.record(action, urls: urls)
 
         job.task = Task {
-            var files: [URL] = []
-            var texts: [(String, String)] = []
-            var failures: [String] = []
-
-            for (index, unit) in units.enumerated() {
-                if Task.isCancelled { break }
-                if units.count > 1 { job.detail = "\(unit[0].lastPathComponent) (\(index + 1) of \(units.count))" }
-                job.progress = units.count > 1 ? Double(index) / Double(units.count) : nil
-                let context = JobContext(inputs: unit, params: params) { fraction in
-                    let overall = (Double(index) + min(max(fraction, 0), 1)) / Double(units.count)
-                    Task { @MainActor in if job.state == .running { job.progress = overall } }
-                }
-                do {
-                    switch try await action.run(context) {
-                    case .files(let outputs): files += outputs
-                    case .text(let title, let body): texts.append((title, body))
-                    }
-                } catch is CancellationError {
-                    break
-                } catch {
-                    failures.append(units.count > 1 ? "\(unit[0].lastPathComponent): \(error.localizedDescription)"
-                                                    : error.localizedDescription)
+            job.progress = count > 1 ? 0 : nil
+            let report = await BatchRunner.run(action, urls: urls, params: params) { overall, finished in
+                Task { @MainActor in
+                    guard job.state == .running else { return }
+                    job.progress = max(job.progress ?? 0, overall)
+                    if count > 1 { job.detail = "\(finished) of \(count) done" }
                 }
             }
 
@@ -79,18 +71,37 @@ final class JobRunner {
                 panel.close()
                 return
             }
-            if !files.isEmpty && Prefs.revealInFinder {
-                NSWorkspace.shared.activateFileViewerSelecting(files)
+            if !report.files.isEmpty && Prefs.revealInFinder {
+                NSWorkspace.shared.activateFileViewerSelecting(report.files)
             }
-            for (title, body) in texts {
+            for (title, body) in report.texts {
                 ResultWindow.show(title: title, body: body)
             }
-            if failures.isEmpty {
+            if !report.files.isEmpty {
+                let entry = HistoryStore.shared.record(action, inputs: urls, outputs: report.files)
+                job.undo = { [weak job] in
+                    guard let job, !job.undone else { return }
+                    guard HistoryStore.shared.entries.contains(where: { $0.id == entry.id }) else {
+                        job.undo = nil // already undone from the menu bar
+                        return
+                    }
+                    do {
+                        let trashed = try HistoryStore.shared.undo(entry)
+                        job.undone = true
+                        job.detail = trashed.count == 1 ? "Moved to the Trash" : "Moved \(trashed.count) items to the Trash"
+                        panel.close(after: 1.4)
+                    } catch {
+                        job.state = .failed("Couldn't move the files to the Trash: \(error.localizedDescription)")
+                    }
+                }
+            }
+            if report.failures.isEmpty {
                 job.progress = 1
                 job.state = .done
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { panel.close() }
+                // Long enough to reach Undo; hovering the card keeps it open.
+                panel.close(after: job.undo == nil ? 1.2 : 5)
             } else {
-                job.state = .failed(failures.joined(separator: "\n"))
+                job.state = .failed(report.failures.map(\.message).joined(separator: "\n"))
             }
         }
     }

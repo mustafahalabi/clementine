@@ -11,6 +11,8 @@ final class ProgressPanel: NSObject, NSWindowDelegate {
     private let job: RunningJob
     private var slot = 0
     private var closing = false
+    private var closeTimer: Timer?
+    private var closeDeadline = Date.distantFuture
 
     static func show(_ job: RunningJob) -> ProgressPanel {
         let panel = ProgressPanel(job: job)
@@ -53,6 +55,28 @@ final class ProgressPanel: NSObject, NSWindowDelegate {
         window.animateOut(to: CGVector(dx: 40, dy: 0), duration: 0.28) { [weak self] in self?.window.close() }
     }
 
+    /// Closes after `delay`, but never while the pointer is over the card: it waits for the pointer to leave, plus a beat.
+    func close(after delay: TimeInterval) {
+        closeDeadline = Date().addingTimeInterval(delay)
+        guard closeTimer == nil else { return }
+        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkDeadline() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        closeTimer = timer
+    }
+
+    private func checkDeadline() {
+        let now = Date()
+        if window.frame.contains(NSEvent.mouseLocation) {
+            closeDeadline = max(closeDeadline, now.addingTimeInterval(1.2))
+        } else if now >= closeDeadline {
+            closeTimer?.invalidate()
+            closeTimer = nil
+            close()
+        }
+    }
+
     private func cancel() {
         job.task?.cancel()
         close()
@@ -66,6 +90,8 @@ final class ProgressPanel: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        closeTimer?.invalidate()
+        closeTimer = nil
         if job.state == .running { job.task?.cancel() }
         Self.open.removeAll { $0 === self }
     }
@@ -118,11 +144,14 @@ struct JobView: View {
                 case .running, .done:
                     HStack(spacing: 10) {
                         CitrusProgressBar(value: job.progress, tone: tone)
+                            .opacity(job.undone ? 0.35 : 1)
                         if job.state == .running {
                             Button(action: cancel) { Image(systemName: "xmark") }
                                 .buttonStyle(CircleIconButtonStyle(size: 18))
                                 .help("Cancel")
                                 .transition(.scale.combined(with: .opacity))
+                        } else if job.undo != nil && !job.undone {
+                            undoButton
                         }
                     }
                     .frame(height: 18)
@@ -136,17 +165,28 @@ struct JobView: View {
         .frame(width: Self.width)
         .background { cardBackground }
         .animation(Theme.spring, value: job.state)
+        .animation(Theme.spring, value: job.undone)
+    }
+
+    private var undoButton: some View {
+        Button { job.undo?() } label: {
+            Label("Undo", systemImage: "arrow.uturn.backward")
+        }
+        .buttonStyle(UndoPillStyle())
+        .help("Move the new files to the Trash")
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
 
     private var badge: some View {
         let symbol = switch job.state {
         case .running: job.symbol
-        case .done: "checkmark"
+        case .done: job.undone ? "arrow.uturn.backward" : "checkmark"
         case .failed: "exclamationmark"
         }
+        let undone = job.undone && tone == .done
         return ZStack {
-            GradientBadge(symbol: symbol, size: 38, circle: true).opacity(tone == .running ? 1 : 0)
-            GradientBadge(symbol: symbol, size: 38, fill: Theme.success, glow: Theme.leaf, circle: true).opacity(tone == .done ? 1 : 0)
+            GradientBadge(symbol: symbol, size: 38, circle: true).opacity(tone == .running || undone ? 1 : 0)
+            GradientBadge(symbol: symbol, size: 38, fill: Theme.success, glow: Theme.leaf, circle: true).opacity(tone == .done && !undone ? 1 : 0)
             GradientBadge(symbol: symbol, size: 38, fill: Theme.failure, glow: Theme.cherry, circle: true).opacity(tone == .failed ? 1 : 0)
         }
         .symbolEffect(.bounce, value: tone)
@@ -165,9 +205,10 @@ struct JobView: View {
                     .animation(.smooth, value: progress)
             }
         case .done:
-            Text("Done")
+            Text(job.undone ? "Undone" : "Done")
                 .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(Theme.leaf)
+                .foregroundStyle(job.undone ? Theme.secondaryText(scheme) : Theme.leaf)
+                .contentTransition(.opacity)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         case .failed:
             Text("Failed")
@@ -189,9 +230,17 @@ struct JobView: View {
                 .padding(.vertical, 8)
                 .background(Theme.cherry.opacity(scheme == .dark ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.cherry.opacity(0.25), lineWidth: 1))
-            Button("Close", action: dismiss)
-                .buttonStyle(SoftButtonStyle())
-                .controlSize(.small)
+            HStack(spacing: 8) {
+                // Partial failures can still take back the files that did get made.
+                if job.undo != nil && !job.undone {
+                    Button { job.undo?() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
+                        .buttonStyle(SoftButtonStyle())
+                        .help("Move the files that were made to the Trash")
+                }
+                Button("Close", action: dismiss)
+                    .buttonStyle(SoftButtonStyle())
+            }
+            .controlSize(.small)
         }
         .padding(.top, 8)
         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -201,7 +250,7 @@ struct JobView: View {
         let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
         let wash: Color = switch tone {
         case .running: Theme.tangerine
-        case .done: Theme.leaf
+        case .done: job.undone ? Theme.tangerine : Theme.leaf
         case .failed: Theme.cherry
         }
         return ZStack {
@@ -211,6 +260,41 @@ struct JobView: View {
                                       startPoint: .topLeading, endPoint: .center))
             shape.strokeBorder(Theme.edge(scheme), lineWidth: 1)
             shape.inset(by: 1).strokeBorder(Theme.hairline(scheme).opacity(0.6), lineWidth: 0.5)
+        }
+    }
+}
+
+/// A compact tinted capsule that fills with the accent on hover, for the Undo offer on finished cards.
+private struct UndoPillStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Pill(configuration: configuration)
+    }
+
+    private struct Pill: View {
+        let configuration: Configuration
+        @Environment(\.colorScheme) private var scheme
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .labelStyle(.titleAndIcon)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(hovering ? Color.white : (scheme == .dark ? Theme.peach : Color(hex: 0xC2410C)))
+                .padding(.horizontal, 9)
+                .frame(height: 20)
+                .background {
+                    ZStack {
+                        Capsule().fill(Theme.tangerine.opacity(scheme == .dark ? 0.2 : 0.14))
+                        Capsule().fill(Theme.accent).opacity(hovering ? 1 : 0)
+                    }
+                }
+                .overlay(Capsule().strokeBorder(Theme.tangerine.opacity(hovering ? 0 : 0.35), lineWidth: 0.75))
+                .shadow(color: hovering ? Theme.glow : .clear, radius: 5, y: 1)
+                .scaleEffect(configuration.isPressed ? 0.94 : 1)
+                .contentShape(Capsule())
+                .onHover { hovering = $0 }
+                .animation(Theme.snappy, value: configuration.isPressed)
+                .animation(Theme.ease, value: hovering)
         }
     }
 }
