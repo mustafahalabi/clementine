@@ -9,9 +9,61 @@ enum MediaEngine {
         if ConvertActions.audioTargets.contains(ext), info.probed, !info.hasAudio {
             throw ClementineError.message("\(input.lastPathComponent) has no audio track.")
         }
+        if ext == "gif" { return try await gif(input, progress: progress) }
         let output = Output.file(beside: input, ext: ext)
-        return try await FFmpeg.transcode(input, to: output, args: FFmpeg.encodeArgs(ext, streams: info), duration: info.duration,
-                                          progress: progress)
+        // A format change is usually for compatibility, so HDR becomes SDR H.264 rather than staying HEVC.
+        let color = await FFmpeg.color(for: info, ext: ext)
+        return try await FFmpeg.transcode(input, to: output, args: FFmpeg.encodeArgs(ext, streams: info, color: color),
+                                          duration: info.duration, hardware: true, progress: progress)
+    }
+
+    /// Video → GIF. With `maxBytes` it re-encodes smaller (width, then frame rate) until the file fits, a few
+    /// times at most, since each try is a full encode.
+    static func gif(_ input: URL, options: FFmpeg.GIFOptions = .init(), maxBytes: Double? = nil,
+                    progress: @escaping Progress) async throws -> URL {
+        let info = try await FFmpeg.readable(input, needsVideo: true)
+        let color = await FFmpeg.color(for: info, ext: "gif")
+        let output = Output.file(beside: input, ext: "gif")
+        let attempts = maxBytes == nil ? 1 : 4
+        var current = options
+        try await Output.produce(output) {
+            for attempt in 0..<attempts {
+                // Each retry gets half of what's left of the bar.
+                let start = attempts == 1 ? 0 : 1 - pow(0.5, Double(attempt))
+                let span = attempts == 1 ? 1 : pow(0.5, Double(attempt + 1))
+                try? FileManager.default.removeItem(at: output)
+                try await FFmpeg.run(["-i", input.path] + FFmpeg.gifArgs(current, color: color) + [output.path],
+                                     duration: info.duration) { progress(start + $0 * span) }
+                // Not URL.resourceValues: it caches, and the file is rewritten on each try.
+                guard let maxBytes, let size = (try? FileManager.default.attributesOfItem(atPath: output.path))?[.size] as? Int,
+                      Double(size) > maxBytes
+                else { return }
+                guard attempt + 1 < attempts,
+                      let smaller = shrink(current, by: maxBytes / Double(size), sourceWidth: info.displayWidth)
+                else { break }
+                current = smaller
+            }
+            throw ClementineError.message("Couldn't get \(input.lastPathComponent) under \(maxBytes?.megabytes ?? "") as a GIF. "
+                                          + "Trim it shorter or pick a lower size or frame rate.")
+        }
+        return output
+    }
+
+    /// GIF options for a file `ratio` times the size: narrower first (to 320 px), then fewer frames (to 8 fps),
+    /// then narrower again (to 120 px). nil when there's nothing left to give.
+    static func shrink(_ options: FFmpeg.GIFOptions, by ratio: Double, sourceWidth: Int) -> FFmpeg.GIFOptions? {
+        let width = Double(min(options.width ?? sourceWidth, max(sourceWidth, 2)))
+        let fps = Double(options.fps)
+        // Size isn't exactly proportional to pixels × frames, so aim a little under.
+        let goal = ratio * 0.85
+        var newWidth = max(width * goal.squareRoot(), min(320, width))
+        var remaining = goal / pow(newWidth / width, 2)
+        let newFps = max(fps * remaining, min(8, fps)).rounded(.down)
+        remaining /= newFps / fps
+        if remaining < 1 { newWidth = max(newWidth * remaining.squareRoot(), min(120, newWidth)) }
+        let result = FFmpeg.GIFOptions(fps: Int(newFps), width: Int(newWidth) / 2 * 2)
+        guard result.fps < options.fps || result.width! < Int(width) else { return nil }
+        return result
     }
 
     // MARK: Size
@@ -24,7 +76,9 @@ enum MediaEngine {
             var args = FFmpeg.streamMaps("mp4", info)
             args += ["-c:v", "libx264", "-preset", "medium", "-crf", crf, "-pix_fmt", "yuv420p",
                      "-c:a", "aac", "-b:a", ["160k", "128k", "96k"][level], "-movflags", "+faststart"]
-            args += ["-vf", maxEdge > 0 ? FFmpeg.fitFilter(maxEdge: maxEdge) : FFmpeg.evenSize]
+            let toneMap = info.isHDR ? await FFmpeg.toneMap(info) : [] // HDR into 8-bit H.264 plays washed out otherwise
+            args += ["-vf", (toneMap + [maxEdge > 0 ? FFmpeg.fitFilter(maxEdge: maxEdge) : FFmpeg.evenSize]).joined(separator: ",")]
+            if info.isHDR { args += FFmpeg.bt709Tags }
             let output = Output.file(beside: input, suffix: "compressed", ext: "mp4")
             return try await FFmpeg.transcode(input, to: output, args: args, duration: info.duration, progress: progress)
         }
@@ -67,13 +121,15 @@ enum MediaEngine {
         guard videoKbps >= 60 else { throw tooSmall(label, input) }
         // Lower bitrates look better at lower resolutions.
         let maxEdge = videoKbps >= 4000 ? 0 : videoKbps >= 1500 ? 1920 : videoKbps >= 700 ? 1280 : 854
-        let scale = maxEdge > 0 ? FFmpeg.fitFilter(maxEdge: maxEdge) : FFmpeg.evenSize
+        let toneMap = info.isHDR ? await FFmpeg.toneMap(info) : []
+        let scale = (toneMap + [maxEdge > 0 ? FFmpeg.fitFilter(maxEdge: maxEdge) : FFmpeg.evenSize]).joined(separator: ",")
 
         let passDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: passDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: passDir) }
         let log = passDir.appendingPathComponent("pass").path
         let video = ["-vf", scale, "-c:v", "libx264", "-preset", "medium", "-b:v", "\(videoKbps)k", "-pix_fmt", "yuv420p", "-passlogfile", log]
+            + (info.isHDR ? FFmpeg.bt709Tags : [])
 
         try await FFmpeg.run(["-i", input.path] + video + ["-pass", "1", "-an", "-f", "null", "/dev/null"],
                              duration: duration) { progress($0 * 0.5) }
@@ -111,13 +167,19 @@ enum MediaEngine {
             if let end = to, end > total { to = nil }
         }
         if let to, to <= from { throw ClementineError.message("The end time must be after the start time.") }
-        var inputArgs = ["-ss", TimeCode.ffmpeg(from)]
-        if let to { inputArgs += ["-to", TimeCode.ffmpeg(to)] }
+        var seek = ["-ss", TimeCode.ffmpeg(from)]
+        if let to { seek += ["-to", TimeCode.ffmpeg(to)] }
         let duration = to.map { $0 - from } ?? total.map { $0 - from }
         let ext = input.pathExtension.lowercased()
+        // Seeking a transport stream before decoding can land past the last keyframe and drop every video frame,
+        // so those decode from the start and cut on output (slower, but always right).
+        let outputSeek = ["ts", "m2ts", "mts"].contains(ext)
+        if outputSeek { seek = ["-ss", TimeCode.ffmpeg(from)] + (duration.map { ["-t", TimeCode.ffmpeg($0)] } ?? []) }
         let output = Output.file(beside: input, suffix: "trimmed", ext: ext)
-        return try await FFmpeg.transcode(input, to: output, inputArgs: inputArgs, args: FFmpeg.encodeArgs(ext, streams: info),
-                                          duration: duration, progress: progress)
+        let color = await FFmpeg.color(for: info, ext: ext, keepHDR: true)
+        return try await FFmpeg.transcode(input, to: output, inputArgs: outputSeek ? [] : seek,
+                                          args: (outputSeek ? seek : []) + FFmpeg.encodeArgs(ext, streams: info, color: color),
+                                          duration: duration, hardware: true, progress: progress)
     }
 
     static func changeSpeed(_ input: URL, speed: Double, progress: @escaping Progress) async throws -> URL {
@@ -126,8 +188,9 @@ enum MediaEngine {
         let vf = info.hasVideo ? ["setpts=PTS/\(speed)"] : []
         let af = info.hasAudio ? FFmpeg.atempo(speed) : []
         let output = Output.file(beside: input, suffix: "\(formatSpeed(speed))×", ext: ext)
-        return try await FFmpeg.transcode(input, to: output, args: FFmpeg.encodeArgs(ext, vf: vf, af: af),
-                                          duration: info.duration.map { $0 / speed }, progress: progress)
+        let color = await FFmpeg.color(for: info, ext: ext, keepHDR: true)
+        return try await FFmpeg.transcode(input, to: output, args: FFmpeg.encodeArgs(ext, color: color, vf: vf, af: af),
+                                          duration: info.duration.map { $0 / speed }, hardware: true, progress: progress)
     }
 
     static func split(_ input: URL, every seconds: Double, progress: @escaping Progress) async throws -> URL {
@@ -160,6 +223,7 @@ enum MediaEngine {
         case 1: times = [0]
         default: times = (0..<10).map { min(duration * (Double($0) + 0.5) / 10, last) }
         }
+        let toneMap = info.isHDR ? ["-vf", await FFmpeg.toneMap(info).joined(separator: ",")] : []
         let folder = times.count > 1 ? try Output.folder(beside: input, name: "\(base) snapshots") : nil
         var outputs: [URL] = []
         try await Output.filling(folder) {
@@ -167,11 +231,11 @@ enum MediaEngine {
                 let output = folder.map { Output.unique(in: $0, base: "\(base) \(index + 1)", ext: "png") }
                     ?? Output.file(beside: input, suffix: "snapshot", ext: "png")
                 try await Output.produce(output) {
-                    try await FFmpeg.run(["-ss", TimeCode.ffmpeg(time), "-i", input.path, "-frames:v", "1", output.path],
+                    try await FFmpeg.run(["-ss", TimeCode.ffmpeg(time), "-i", input.path, "-frames:v", "1"] + toneMap + [output.path],
                                          duration: nil) { _ in }
                     // Durations can overstate the video track; fall back to the last frame there is.
                     if !FileManager.default.fileExists(atPath: output.path) {
-                        try await FFmpeg.run(["-sseof", "-1", "-i", input.path, "-update", "1", output.path], duration: nil) { _ in }
+                        try await FFmpeg.run(["-sseof", "-1", "-i", input.path, "-update", "1"] + toneMap + [output.path], duration: nil) { _ in }
                     }
                     guard FileManager.default.fileExists(atPath: output.path) else {
                         throw ClementineError.message("Couldn't take a snapshot of \(input.lastPathComponent) at \(TimeCode.ffmpeg(time)).")
@@ -195,16 +259,32 @@ enum MediaEngine {
         let info = try await FFmpeg.readable(input, needsVideo: true)
         let ext = input.pathExtension.lowercased()
         let output = Output.file(beside: input, suffix: "rotated", ext: ext)
-        return try await FFmpeg.transcode(input, to: output, args: FFmpeg.encodeArgs(ext, streams: info, vf: filters),
-                                          duration: info.duration, progress: progress)
+        let color = await FFmpeg.color(for: info, ext: ext, keepHDR: true)
+        return try await FFmpeg.transcode(input, to: output, args: FFmpeg.encodeArgs(ext, streams: info, color: color, vf: filters),
+                                          duration: info.duration, hardware: true, progress: progress)
     }
 
-    /// Joins clips end to end, scaling everything to the first clip's frame so mixed sources work.
+    /// Joins clips end to end on one canvas: the frame of the first clip shaped like most of them (portrait phone
+    /// clips make a portrait video), as players show it, with the others fitted and padded. HDR stays HDR (10-bit
+    /// HEVC) only when every clip has the same HDR transfer; otherwise HDR clips are tone-mapped to SDR.
     static func joinVideos(_ inputs: [URL], progress: @escaping Progress) async throws -> URL {
         var infos: [FFmpeg.Info] = []
         for input in inputs { infos.append(try await FFmpeg.readable(input, needsVideo: true)) }
-        let width = max(infos[0].width / 2 * 2, 2)
-        let height = max(infos[0].height / 2 * 2, 2)
+        func isPortrait(_ info: FFmpeg.Info) -> Bool { info.displayHeight > info.displayWidth }
+        func isLandscape(_ info: FFmpeg.Info) -> Bool { info.displayWidth > info.displayHeight }
+        let portraits = infos.filter(isPortrait).count, landscapes = infos.filter(isLandscape).count
+        let canvas = portraits > landscapes ? infos.first(where: isPortrait)!
+            : landscapes > portraits ? infos.first(where: isLandscape)! : infos[0]
+        let width = max(canvas.displayWidth / 2 * 2, 2)
+        let height = max(canvas.displayHeight / 2 * 2, 2)
+        let fps = joinRate(infos.compactMap(\.frameRate))
+
+        let transfers = Set(infos.map(\.colorTransfer))
+        let keepHDR = infos.allSatisfy(\.isHDR) && transfers.count == 1
+        var color = FFmpeg.Color.unchanged
+        if keepHDR, let transfer = infos[0].colorTransfer {
+            color = .hdr(transfer: transfer, primaries: infos[0].colorPrimaries ?? "bt2020")
+        }
 
         var args: [String] = []
         var filters: [String] = []
@@ -212,7 +292,14 @@ enum MediaEngine {
         var concatInputs = ""
         for (index, input) in inputs.enumerated() {
             args += ["-i", input.path]
-            filters.append("[\(index):v]scale=\(width):\(height):force_original_aspect_ratio=decrease,pad=\(width):\(height):(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v\(index)]")
+            // ffmpeg applies each clip's rotation before the graph, so the canvas above is in display terms.
+            let toneMap = !keepHDR && infos[index].isHDR ? await FFmpeg.toneMap(infos[index]) : []
+            let chain = toneMap + [
+                "scale=\(width):\(height):force_original_aspect_ratio=decrease",
+                "pad=\(width):\(height):(ow-iw)/2:(oh-ih)/2", "setsar=1", "fps=\(fps)",
+                "format=\(keepHDR ? "yuv420p10le" : "yuv420p")",
+            ]
+            filters.append("[\(index):v]\(chain.joined(separator: ","))[v\(index)]")
         }
         for (index, info) in infos.enumerated() {
             if info.hasAudio {
@@ -226,15 +313,33 @@ enum MediaEngine {
             concatInputs += "[v\(index)][a\(index)]"
         }
         filters.append("\(concatInputs)concat=n=\(inputs.count):v=1:a=1[v][a]")
+        var video = FFmpeg.h264
+        if case .hdr(let transfer, let primaries) = color {
+            video = FFmpeg.hevcHDR(transfer: transfer, primaries: primaries)
+        } else if infos.contains(where: \.isHDR) {
+            video += FFmpeg.bt709Tags
+        }
         let output = Output.file(beside: inputs[0], suffix: "joined", ext: "mp4")
         let total = infos.compactMap(\.duration).reduce(0, +)
         try await Output.produce(output) {
-            try await FFmpeg.run(args + ["-filter_complex", filters.joined(separator: ";"), "-map", "[v]", "-map", "[a]",
-                                         "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "aac", "-b:a", "192k",
-                                         "-movflags", "+faststart", output.path],
-                                 duration: total, progress: progress)
+            try await FFmpeg.encode(args + ["-filter_complex", filters.joined(separator: ";"), "-map", "[v]", "-map", "[a]"]
+                                    + video + ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"],
+                                    to: output, hardware: true, duration: total, progress: progress)
         }
         return output
+    }
+
+    /// The clips' shared frame rate, or the highest (up to 60) when they differ, snapped to the standard rate it
+    /// measures as (phones record variable rates like 29.98).
+    static func joinRate(_ rates: [Double]) -> String {
+        guard let first = rates.first else { return "30" }
+        let rate = rates.allSatisfy({ abs($0 - first) / first < 0.001 }) ? first : min(rates.max() ?? first, 60)
+        let standard = ["24000/1001": 24000.0 / 1001, "24": 24, "25": 25, "30000/1001": 30000.0 / 1001, "30": 30,
+                        "48": 48, "50": 50, "60000/1001": 60000.0 / 1001, "60": 60]
+        if let match = standard.min(by: { abs($0.value - rate) < abs($1.value - rate) }), abs(match.value - rate) / rate < 0.01 {
+            return match.key
+        }
+        return String(format: "%.3f", rate)
     }
 
     static func joinAudio(_ inputs: [URL], progress: @escaping Progress) async throws -> URL {

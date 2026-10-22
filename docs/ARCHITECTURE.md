@@ -241,15 +241,27 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   keeping the tool's own lines below it as "ffmpeg said: …". A stop we asked for is a `CancellationError`
   whatever the exit status (see Cancellation above).
 - **FFmpeg** (`FFmpeg.swift`):
-  - `probe`: ffprobe JSON with `format=duration:stream=…:stream_disposition=attached_pic`. It reads duration,
-    audio channels, the first real video stream (skipping attached pictures) and subtitle codecs.
+  - `probe`: ffprobe JSON with `format=duration:stream=…:stream_disposition=attached_pic:stream_side_data=rotation`.
+    It reads duration, audio channels, the first real video stream (skipping attached pictures) with its colour
+    tags and display-matrix rotation (`isHDR`, `displayWidth/Height`), and subtitle codecs.
   - `readable`: rejects empty files and files with no audio or video.
   - `run`: adds `-hide_banner -nostdin -n -loglevel error -nostats -progress pipe:1` and turns `out_time_us=`
     into a fraction of the duration. `-n` because outputs always come from `Output`: a file already at that path
     isn't ours, so ffmpeg must fail rather than overwrite it.
-  - `transcode`: wraps the run in `Output.produce`.
-  - `encodeArgs`: per-container codec presets, with even-size scaling for H.264/MPEG-4/WMV and a palette
-    pipeline for GIF. `streamMaps` keeps every stream and converts subtitles per container.
+  - `transcode`: wraps the run in `Output.produce`; with `hardware: true` it goes through `encode`.
+  - `encode` + `Hardware`: rewrites software x264/x265 CRF settings for `h264_videotoolbox`/`hevc_videotoolbox`
+    (`-q:v`, calibrated with VMAF: CRF 20 ≈ q 65) when Settings › Use hardware encoding for video is on and the CLI wasn't
+    given `--software`. If VideoToolbox fails, the partial output is deleted and the software args run. Engines
+    keep writing plain x264 args; Compress and Target Size don't ask for hardware (x264 is ~25% smaller at equal
+    quality, and two-pass has no VideoToolbox equivalent).
+  - `color(for:ext:keepHDR:)` → `Color`: `.unchanged` for SDR, `.toneMap(filters)` for HDR into 8-bit outputs
+    (zscale + tonemap mobius when the ffmpeg has them, checked once per ffmpeg path with `hasFilter`; otherwise a
+    PQ/HLG → BT.709 lutrgb curve plus `colorspace`), or `.hdr` to keep 10-bit HEVC (`hevcHDR`) for edits into
+    MP4/M4V/MOV. Tone-mapped outputs get BT.709 tags.
+  - `encodeArgs`: per-container codec presets (H.264 + AAC also for TS/FLV/3GP, MPEG-2 for MPG), with even-size
+    scaling and the `Color` plan. `gifArgs` is the GIF pipeline (fps, width, one `stats_mode=diff` palette,
+    sierra2_4a dithering redrawn only where frames change). `streamMaps` keeps every stream and converts
+    subtitles per container.
   - `atempo` chains filters to stay within 0.5…2.
 - **Output** (`Support/Output.swift`):
   - `file(beside:name:suffix:ext:)` writes next to the input, e.g. `photo (compressed).jpg`, and never

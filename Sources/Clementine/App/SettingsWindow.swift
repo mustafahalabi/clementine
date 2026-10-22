@@ -92,6 +92,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.revealKey) private var reveal = true
     @AppStorage(Prefs.qualityKey) private var quality = 0.85
     @AppStorage(Prefs.toolsDirectoryKey) private var toolsDirectory = ""
+    @AppStorage(Prefs.hardwareEncodingKey) private var hardwareEncoding = true
     @State private var launchAtLogin = LaunchAtLogin.isOn
     @State private var loginError: String?
 
@@ -126,6 +127,11 @@ struct SettingsView: View {
             Section {
                 Toggle("Show the wheel while dragging", isOn: $enabled)
                 Toggle("Reveal finished files in Finder", isOn: $reveal)
+                Toggle(isOn: $hardwareEncoding) {
+                    Text("Use hardware encoding for video")
+                    Text("Much faster, slightly larger files. Compress always uses software.")
+                }
+                .uiTestID("settings.hardwareEncoding")
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, on in
                         // Also fires when we snap the toggle back to the real status below.

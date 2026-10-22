@@ -2,6 +2,19 @@
 
 ## 0.2.0 — unreleased
 
+- **Video** (`feat/video`)
+  - HDR video (iPhone HLG, HDR10/PQ) converted to H.264, WebM, GIF, PNG snapshots, Compress or Target Size is
+    tone-mapped to SDR and tagged BT.709, instead of playing washed out. Trim, Speed, Rotate and Join keep HDR as
+    10-bit HEVC in MP4/MOV.
+  - H.264/HEVC encode on the media engine (VideoToolbox) for Convert, Trim, Speed, Rotate and Join: a 5 s 4K clip
+    converts in 2.9 s instead of 8.2 s, using 2.7 s of CPU instead of 49 s, at the same VMAF. Falls back to
+    software by itself; Settings › **Use hardware encoding for video** turns it off and the CLI has `--software`.
+  - Join honours phone rotation and makes a portrait video from portrait clips, and keeps the clips' frame rate
+    instead of forcing 30 fps.
+  - New **GIF** tool: frame rate, width (or original) and an optional "under N MB" target. GIFs use 15 fps, a
+    motion-weighted palette and better dithering.
+  - Trim, Speed and Rotate on TS, FLV and 3GP write H.264 + AAC, and MPG high-quality MPEG-2, instead of ffmpeg's
+    200 kb/s defaults (3GP used to fail). Trimming a TS file no longer loses its video.
 - **Remove Background and Shortcuts**
   - New **Cut Out Subject** tool for images (⌥⇧): removes the background and keeps the person, pet or object on
     transparency, on-device with Apple's Vision. Saves PNG, HEIC or WebP, optionally cropped to the subject, with a

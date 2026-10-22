@@ -6,7 +6,7 @@ for every run. Editors and other UI are covered by an off-screen interaction har
 off-screen renders. A short manual checklist covers what only a real Mac session can confirm.
 
 ```sh
-make test       # all eight shell suites (scripts/run-tests.sh): runs every suite even after a failure, then a summary
+make test       # all the shell suites (scripts/run-tests.sh): runs every suite even after a failure, then a summary
 make ui-test    # swift build + .build/debug/Clementine --ui-test
 ```
 
@@ -32,6 +32,7 @@ which it uses (`Clementine uses tools in …`). Fixtures are always made with th
 | `test-waveform.sh` | Channels (layouts, gains, RMS levels per channel, 5.1), Bleep on audio and video (picture copied, tone inside/silence outside, codecs), Trim with editor-style ms times, and `--render-ui` of the Trim/Bleep/Channels editors in light and dark. The renders are skipped only when there's no GUI session (`launchctl managername` isn't `Aqua`, e.g. over ssh); a crash or non-zero exit fails the suite. | 32 | ~75 s (≈65 s is `--render-ui`) |
 | `test-pdf-metadata.sh` | Page specs (`3r90`, `r-90`, bare `r90`, duplicates, `1:` prefix, rotation adding up) and merge specs (`2:1-3`, cross-file numbering, error wording). Metadata writers for JPG/PNG/HEIC, MP3/M4A/Opus/FLAC/MOV and PDF: round-trips, clearing, no re-encoding, date/year/track/rating validation. | 70 | ~9 s |
 | `test-productivity.sh` | Wheel ordering from `--record`ed usage (per kind and mode, `orderByUsage` off), hidden slices, history (JSON, 50 cap, order, undo, skip-gone, clear), parallel batches (order, concurrency limits via `CLEMENTINE_TRACE_CONCURRENCY`, collision-free names, partial failure exit 1). Uses a scratch defaults suite and support dir. | 34 | ~6 s |
+| `test-video.sh` | HLG/PQ fixtures (10-bit HEVC; made with the bundled ffmpeg's zscale when available): tone-mapping to BT.709 for every SDR output (tags plus a luma/saturation check against washed-out passthrough), also through the no-zscale fallback with Homebrew's ffmpeg; HDR kept as `hvc1` 10-bit HEVC by Trim/Speed/Rotate/Join; VideoToolbox used (no x264 SEI), the x264/x265 fallback through a fake ffmpeg that refuses VideoToolbox, `--software`, the Settings toggle, Compress on x264; Join canvas with display-matrix rotation and frame rates; GIF fps/width/target size; Trim/Speed/Rotate on TS/FLV/3GP/MPG. | 58 | ~30 s |
 | `test-lifecycle.sh` | Process lifecycle: SIGINT/SIGTERM/SIGHUP during a long encode (exit 128 + n, ffmpeg gone, no output or partial left, power assertion held), SIGKILL mid-encode (the output only ever exists as a hidden `.clementine-*` temporary; the next launch removes it and drops the folder from the in-progress journal), what the sweep keeps (live owner, look-alike names, folders not in the journal), the final name being taken during a write (next free name), failed writes (temporary gone, real name in the message), a tool that ignores SIGTERM (SIGKILL after the grace period), a second signal, fake tools that crash, get killed or exit 255 by themselves (failures, exit 1), and `--set`/`--hover` validation (exit 2). Fake tools go in through the `toolsDirectory` setting in a scratch defaults suite. | 67 | ~30 s |
 
 \* Measured on an M4 Pro (12 cores), macOS 26.1, warm build: about 585 checks, about 3 minutes in total. Counts
@@ -89,7 +90,7 @@ per ref; newer pushes cancel older runs). The job is called `test`, which is the
    back to the newest build for the same toolchain and packages) and `vendor/bin` (keyed on
    `scripts/fetch-tools.sh`).
 2. `make tools` on a cache miss, `brew install ffmpeg webp` (fixtures), `swift build`, `swift build -c release`.
-3. All eight suites, each its own step. They run even if an earlier suite failed, so the run shows every
+3. All the suites, each its own step. They run even if an earlier suite failed, so the run shows every
    suite's result; any failure fails the job. Clementine uses the bundled tools from `vendor/bin`.
 4. `scripts/bundle.sh debug`: the bundled binary's `--help` (Sparkle embeds and links), the tools are in
    `Contents/Resources/bin`, the App Intents metadata (`Contents/Resources/Metadata.appintents`) lists the three
