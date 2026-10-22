@@ -46,10 +46,16 @@ enum PDFEngine {
         try await Output.filling(folder) {
             for index in 0..<count {
                 try Task.checkCancellation()
-                guard let page = document.page(at: index) else { continue }
                 let output = folder.map { Output.unique(in: $0, base: "\(base) \(index + 1)", ext: format.ext) }
                     ?? Output.file(beside: input, ext: format.ext)
-                try await ImageEngine.write(try render(page, scale: 2), to: output, format: format, quality: 0.9)
+                // Rendering goes through AppKit, which autoreleases each page's bitmap; without a pool per page they'd
+                // pile up until the whole document is done (~12 MB a page).
+                let encoded = try autoreleasepool { () throws -> Data? in
+                    guard let page = document.page(at: index) else { return nil }
+                    return try ImageEngine.encode(try render(page, scale: 2), format: format, quality: 0.9)
+                }
+                guard let encoded else { continue }
+                try await Output.produce(output) { try encoded.write(to: output) }
                 outputs.append(output)
                 progress(Double(index + 1) / Double(count))
             }

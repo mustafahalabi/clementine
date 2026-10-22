@@ -329,9 +329,8 @@ enum ImageTools {
     }
 
     static func makePDF(_ inputs: [URL]) async throws -> URL {
-        let images = try inputs.map { try Task.checkCancellation(); return try ImageEngine.load($0).image }
         let output = Output.file(beside: inputs[0], suffix: "combined", ext: "pdf")
-        try await Output.produce(output) { try ImageEngine.writePDF(images, to: output) }
+        try await Output.produce(output) { try ImageEngine.writePDF(inputs, to: output) }
         return output
     }
 
