@@ -403,17 +403,18 @@ Requires macOS 14+ and Xcode 16+ (Swift 6 toolchain). Swift Package Manager fetc
 make tools                   # optional: verified static ffmpeg/ffprobe + cwebp/img2webp into vendor/bin, bundled into the app
 make run                     # builds build/Clementine.app and launches it
 make install                 # copies it to /Applications
-make test                    # smoke, edge-case and stress suites: every action, run headlessly on generated files
+make test                    # all eight headless suites (every action on generated files), summary at the end
 make ui-test                 # interaction tests: real windows off-screen, driven with synthetic clicks, drags and typing
 scripts/test-waveform.sh     # channel layouts, bleeps on video, editor times, offscreen editor renders
 scripts/test-pdf-metadata.sh # page lists, merge picks and metadata writers, read back after each run
 scripts/test-image-editor.sh # crop / redact / annotate engines, from the JSON the editors produce
 ```
 
-The tests (and an app built without `make tools`) use Homebrew's tools: `brew install ffmpeg webp`. External tools
-are looked up in the app's `Contents/Resources/bin` first, then the folder set in Settings, then `/opt/homebrew/bin`,
-`/usr/local/bin`, `/usr/bin` and `/bin`. CI (`.github/workflows/ci.yml`) builds and runs the smoke and edge tests on
-every push.
+An app built without `make tools` uses Homebrew's tools (`brew install ffmpeg webp`); the test suites use
+`vendor/bin` when `make tools` has run. External tools are looked up in the folder set in Settings first (so you can
+use your own ffmpeg build), then the app's `Contents/Resources/bin`, then `/opt/homebrew/bin`, `/usr/local/bin`,
+`/usr/bin` and `/bin`. CI (`.github/workflows/ci.yml`) runs all eight suites against the bundled ffmpeg plus a
+release build on every push and pull request.
 
 ### Command line
 

@@ -1,6 +1,41 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — unreleased
+
+A hardening release: safer archives and outputs, nothing left behind when jobs stop, stricter privacy, and a
+calmer first run. Apple silicon, macOS 14 or later.
+
+**Safety and privacy**
+- File names inside archives, and files you archive, are always treated as names, never as tool options.
+- Extracting drops symlinks that point outside the extracted items and refuses archives that would expand to an
+  unreasonable size or fill the disk.
+- Outputs whose names differ only in letter case no longer overwrite each other, and ffmpeg never overwrites a file.
+- Undo only trashes outputs that are still the files Clementine wrote.
+- HTML conversion makes no network requests: remote images, stylesheets, fonts and frames are removed first.
+- Redact removes GPS, camera serial numbers, owner names and embedded previews from the redacted image.
+- New [PRIVACY.md](PRIVACY.md): the only automatic network request is Sparkle's update check.
+
+**Reliability**
+- Quitting the app or interrupting the CLI stops running tools and removes unfinished outputs.
+- A tool that crashes is reported as a failure, not a cancellation; the CLI exits non-zero on failure (exit codes
+  in docs/CLI.md).
+- The CLI validates `--set` values and other arguments and explains what's allowed instead of crashing.
+- The Mac stays awake while jobs run.
+- Document → PDF fails at once in a folder that isn't writable, instead of hanging, and uses the system paper size.
+- Text and subtitles in UTF-16 and Windows-1252 convert correctly.
+- Created ZIPs mark non-ASCII file names as UTF-8, so they read correctly on Windows.
+
+**First run and interface**
+- Clementine no longer uses CPU while idle (the hidden wheel kept animating).
+- Opening the app again shows Settings, or the welcome tour if it wasn't finished; the tour only counts as seen once
+  you finish or close it. New installs launch at login.
+- Job cards stack without overlapping; long errors fold behind "Show details…" and lead with a plain sentence.
+- Higher-contrast accent for text on orange, with stronger shades under Increase Contrast; Reduce Motion turns off
+  the wheel's decorative motion.
+- The image wheel's OCR slice is labelled "Text (OCR)"; slices and the wheel have VoiceOver labels, and job results
+  are announced.
+
+**Project**
 
 **Project**
 - README rewritten as a product page with renders of every wheel and editor, in light and dark.
