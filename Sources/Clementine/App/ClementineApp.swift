@@ -9,8 +9,11 @@ enum Entry {
         if UIPreview.handle(arguments) || UITest.handle(arguments) || ShortcutRunner.handle(arguments) { exit(0) }
         #endif
         if let command = arguments.first, CLI.commands.contains(command) {
+            Output.sweepStale()
             CLI.run(arguments)
         }
+        // Off the main thread: a recorded folder may be on a slow or unmounted network volume.
+        DispatchQueue.global(qos: .utility).async { Output.sweepStale() }
         ClementineApp.main()
     }
 }
@@ -19,8 +22,10 @@ struct ClementineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra("Clementine", systemImage: "camera.aperture") {
+        MenuBarExtra {
             MenuContent()
+        } label: {
+            MenuBarIcon()
         }
     }
 }
@@ -55,8 +60,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 private struct MenuContent: View {
     @AppStorage(Prefs.enabledKey) private var enabled = true
+    @ObservedObject private var reminder = UpdateReminder.shared
 
     var body: some View {
+        if let version = reminder.availableVersion {
+            Button("Update Available: Clementine \(version) — Install…") { Updater.shared.showPendingUpdate() }
+            Divider()
+        }
         Toggle("Wheel Enabled", isOn: $enabled)
         Divider()
         Text("Hold ⇧ while dragging to convert")

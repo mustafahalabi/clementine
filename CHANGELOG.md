@@ -10,6 +10,14 @@
   - Clementine's actions are in the **Shortcuts** app: *Convert with Clementine* (any action, picked from a list
     that fits the files, with optional `key=value` settings), *Remove Background with Clementine* and *Convert
     Images with Clementine*. They return the new files and run without opening Clementine's windows.
+- **fix/atomic-outputs**
+  - Results are written under a hidden temporary name in the same folder and get their real name only when
+    they're complete, so a crash or force quit can't leave a half-written file that looks finished. If the name
+    was taken in the meantime, the next free one is used; nothing is ever replaced.
+  - Temporaries left by a crash are deleted at the next launch, only in folders Clementine recorded itself.
+  - Updates found by an automatic check no longer pop up behind other apps: the menu bar icon shows a dot, the
+    menu gets an "Update Available: Clementine x — Install…" item, and a quiet notification goes to Notification Center.
+    Choosing either brings the update window to the front.
 
 ## 0.1.1 — 2026-10-22
 

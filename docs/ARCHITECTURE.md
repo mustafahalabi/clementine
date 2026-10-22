@@ -188,7 +188,8 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   peak with `CLEMENTINE_TRACE_CONCURRENCY`. Results come back in input order in a `BatchReport`.
   `CancellationError` counts as `cancelled` only if the batch's task was cancelled (otherwise it's a failure,
   "Stopped unexpectedly."), and other errors become `failures` (prefixed with the file name when there are
-  several units). The whole run is wrapped in `Output.beginBatch()/endBatch()` and holds a
+  several units). Each unit runs inside `Output.atomically` (outputs staged under hidden names, renamed on
+  success; see Output). The whole run is wrapped in `Output.beginBatch()/endBatch()` and holds a
   `ProcessInfo.beginActivity(.userInitiated, .idleSystemSleepDisabled)` so the Mac doesn't idle to sleep.
 - Cancellation: the card's cancel button, or closing a running card (`windowWillClose`), calls
   `job.task?.cancel()`. Units that haven't started return `CancellationError`. `ProcessRunner`'s
@@ -266,6 +267,22 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   `CGContext.clip(to:mask:)` rather than taking Vision's ready-made masked buffer, so the original color space
   survives. The same pass finds the subject's bounding box (mask > 12/255) for "crop to subject". No observation,
   no instances or an empty mask all become "No subject found"; other Vision errors are wrapped in a plain message.
+  - Staging: `BatchRunner` runs every unit inside `Output.atomically`, which sets a task-local `Output.Scope`.
+    While one is set, `file(beside:)`, `file(in:base:ext:)`, `file(in:sameNameAs:)` and `folder(beside:)` reserve
+    the final name but return a hidden temporary in the same folder (same volume, so the rename is atomic):
+    `.clementine-<pid>-<8 hex>-<final name>`, real extension last so ffmpeg and ImageIO still infer the format.
+    Engines write there unchanged. When the unit succeeds, every staged item that exists is renamed with
+    `renamex_np(RENAME_EXCL)` (never replaces; on `EEXIST` it takes the next free name), and URLs in the result,
+    including ones inside a staged folder, are rewritten to the final paths, so history, undo, the CLI's output
+    and Reveal in Finder only ever see real names. On failure or cancellation the temporaries are deleted and
+    error messages have the hidden names replaced with the real ones. Staged items an engine deleted itself are
+    skipped. `unique(in:)` stays a plain name, for items inside an output folder or a scratch folder.
+    Without a scope (code outside a job) the old behaviour applies: the final name directly.
+  - Crash recovery: before handing out a temporary, `OutputJournal` appends its folder (NUL-separated, under
+    `flock`) to `in-progress` in the support folder. At launch (CLI synchronously, the app on a utility queue)
+    `Output.sweepStale()` visits only those folders and deletes items named exactly like a temporary whose pid has
+    exited, or whose newest modification is over an hour old (a reused pid); everything else stays. Folders with
+    nothing left are dropped from the journal. `discardInFlight` also deletes every staged item.
 - Other engines: `ImageEdits` renders the editors' JSON at full resolution, in pixel coordinates of the upright
   image with a top-left origin. `MetadataEngine.write` takes a JSON object of field changes and saves an
   `(edited)` copy without re-encoding. `PDFEngine.parseSpec/spec(for:qualified:)` handles page specs such as
@@ -416,6 +433,17 @@ static array until `willClose`.
   Shortcuts shows the plain message. `ClementineActionQuery` reads the intent's files through
   `@IntentParameterDependency` to suggest only actions that fit them. Note that the app's own `Parameter` type
   shadows App Intents' `Parameter` alias, so intents use `@IntentParameter`.
+- **Gentle update reminders** (`UpdateReminder` in `App/Updater.swift`, the controller's user-driver delegate):
+  as a menu bar (`LSUIElement`) app, a scheduled check's alert would otherwise open behind the front app.
+  `standardUserDriverShouldHandleShowingScheduledUpdate` lets Sparkle show it only when it proposes immediate
+  focus (soon after launch, or after the Mac was idle). Otherwise `standardUserDriverWillHandleShowingUpdate`
+  publishes `availableVersion`, which puts a dot on the menu bar icon (`MenuBarIcon`, a template image so the
+  menu bar tints it) and an "Update Available: Clementine x — Install…" item at the top of the menu, and posts a
+  notification with provisional authorization (quietly to Notification Center, no permission prompt). The menu
+  item and a click on the notification call `Updater.showPendingUpdate()` (activate + `checkForUpdates`, which
+  brings the held session's alert to the front). `standardUserDriverDidReceiveUserAttention` withdraws the
+  notification and `standardUserDriverWillFinishUpdateSession` clears the cue. When Sparkle shows an alert itself,
+  the app activates so it isn't behind Finder. `--render-ui` draws both icons (`menubar-icon-*.png`).
 - **Services:** `Info.plist › NSServices` declares "Convert with Clementine" (`convertFiles`) and
   "Clementine Tools" (`toolFiles`) for `public.item` files. `ServiceProvider.register()` sets
   `NSApp.servicesProvider` and calls `NSUpdateDynamicServices()`. Both handlers read file URLs from the

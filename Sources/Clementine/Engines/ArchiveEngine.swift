@@ -49,13 +49,13 @@ enum ArchiveEngine {
         case .zip:
             // bsdtar rather than /usr/bin/zip: it marks non-ASCII names as UTF-8 (Windows garbles them otherwise),
             // stores symlinks as links, and never expands wildcards in names.
-            let output = Output.unique(in: dir, base: base, ext: "zip")
+            let output = Output.file(in: dir, base: base, ext: "zip")
             try await Output.produce(output) {
                 try await ProcessRunner.run(tar, ["-c", "--format", "zip", "-f", output.path] + packing + members)
             }
             return output
         case .tar:
-            let output = Output.unique(in: dir, base: base, ext: "tar")
+            let output = Output.file(in: dir, base: base, ext: "tar")
             try await Output.produce(output) {
                 try await ProcessRunner.run(tar, ["-c", "-f", output.path] + packing + members)
             }
@@ -67,14 +67,14 @@ enum ArchiveEngine {
                 // `a.txt` → `a.txt.gz`, or `a 2.txt.gz` on a clash, so it still unpacks to a .txt.
                 let ext = first.pathExtension
                 let output = ext.isEmpty
-                    ? Output.unique(in: dir, base: first.lastPathComponent, ext: "gz")
-                    : Output.unique(in: dir, base: first.deletingPathExtension().lastPathComponent, ext: "\(ext).gz")
+                    ? Output.file(in: dir, base: first.lastPathComponent, ext: "gz")
+                    : Output.file(in: dir, base: first.deletingPathExtension().lastPathComponent, ext: "\(ext).gz")
                 try await Output.produce(output) {
                     try await ProcessRunner.run(gzip, ["-c", "-9", first.path], stdoutFile: output)
                 }
                 return output
             }
-            let output = Output.unique(in: dir, base: base, ext: "tar.gz")
+            let output = Output.file(in: dir, base: base, ext: "tar.gz")
             try await Output.produce(output) {
                 try await ProcessRunner.run(tar, ["-c", "-z", "-f", output.path] + packing + members)
             }
@@ -87,7 +87,7 @@ enum ArchiveEngine {
         let dir = archive.deletingLastPathComponent()
         try checkNotEmpty(archive)
         if let tool = plainDecompressor(archive) {
-            let output = Output.unique(in: dir, sameNameAs: innerName(archive))
+            let output = Output.file(in: dir, sameNameAs: innerName(archive))
             try await Output.produce(output) {
                 try await guarding(archive, writingTo: output) {
                     try await decompress(archive, with: tool, to: output)
@@ -101,11 +101,11 @@ enum ArchiveEngine {
         let items = try contents(of: staging)
         let fm = FileManager.default
         if items.count == 1 {
-            let output = Output.unique(in: dir, sameNameAs: items[0])
+            let output = Output.file(in: dir, sameNameAs: items[0])
             try fm.moveItem(at: items[0], to: output)
             return output
         }
-        let folder = Output.unique(in: dir, base: baseName(archive), ext: "")
+        let folder = Output.file(in: dir, base: baseName(archive), ext: "")
         try fm.createDirectory(at: folder, withIntermediateDirectories: false)
         for item in items {
             try fm.moveItem(at: item, to: folder.appendingPathComponent(item.lastPathComponent))

@@ -89,6 +89,17 @@ enum UIPreview {
 
         snapshotWindow(NSHostingController(rootView: SettingsView()), appearance: appearance, to: out("settings"))
 
+        // Menu bar icon, plain and with the update-available dot, tinted the way the menu bar tints templates.
+        let icons = HStack(spacing: 18) {
+            ForEach([false, true], id: \.self) { badged in
+                Image(nsImage: MenuBarIcon.image(badged: badged)).renderingMode(.template).scaleEffect(2)
+                    .frame(width: 44, height: 44)
+            }
+        }
+        .padding(12)
+        .background(Color(nsColor: .windowBackgroundColor))
+        snapshot(NSHostingView(rootView: icons), appearance: appearance, to: out("menubar-icon"))
+
         // Welcome tour, one PNG per page (demo frozen on a hovered slice).
         for page in 0..<OnboardingView.pageCount {
             snapshotWindow(NSHostingController(rootView: OnboardingView(initialStep: page, live: false)),
