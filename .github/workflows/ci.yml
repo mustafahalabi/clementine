@@ -91,6 +91,9 @@ jobs:
       - name: Lifecycle test
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: scripts/test-lifecycle.sh
+      - name: Video test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/test-video.sh
 
       - name: App bundle (embeds Sparkle and the tools)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}

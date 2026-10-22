@@ -140,8 +140,13 @@ shapes and text, **Add BG** (a gradient backdrop with padding, rounded corners a
 </picture>
 
 **Trim** on a filmstrip and waveform, **Compress** or hit a **Target Size** (two-pass), change **Speed**, **Split**,
-take a **Snapshot**, **Mute**, **Rotate**, **Bleep** words out, and edit or remove **Metadata**. Drop two or more
-clips to **Join** them.
+take a **Snapshot**, **Mute**, **Rotate**, make a **GIF** (frame rate, width, and an optional "under N MB"),
+**Bleep** words out, and edit or remove **Metadata**. Drop two or more clips to **Join** them; portrait phone clips
+stay portrait.
+
+iPhone HDR video converts to SDR with correct colours instead of looking washed out, and edits keep it HDR (10-bit
+HEVC). H.264 and HEVC encode on the Mac's media engine (VideoToolbox), several times faster than software; turn
+**Use hardware encoding** off in Settings for the smallest files.
 
 ### Audio
 
@@ -368,6 +373,10 @@ dragging" is on in Settings and that Clementine is running (look for it in the m
 - **Waveform editors** show a filmstrip and video preview only for formats AVFoundation reads (MP4, MOV, M4V); MKV,
   WebM and the like get the waveform and sound-only playback. Bleep and Channels previews are rendered with ffmpeg
   first, so long files take a moment.
+- **HDR** is kept only by Trim, Speed, Rotate and Join (all-HDR clips) into MP4/MOV; everything else, including
+  Convert to MP4/MOV, makes SDR. HDR10+/Dolby Vision dynamic metadata isn't carried over.
+- **Hardware encoding** makes files about 15-30% larger than software at the same quality; Compress and Target
+  Size always use software.
 - **Split** copies streams without re-encoding, so cuts land on keyframes and part lengths are approximate.
 - **DOCX → PDF** keeps text styling but not embedded images.
 - **RAR** can be extracted but not created.
@@ -403,7 +412,7 @@ Requires macOS 14+ and Xcode 16+ (Swift 6 toolchain). Swift Package Manager fetc
 make tools                   # optional: verified static ffmpeg/ffprobe + cwebp/img2webp into vendor/bin, bundled into the app
 make run                     # builds build/Clementine.app and launches it
 make install                 # copies it to /Applications
-make test                    # all eight headless suites (every action on generated files), summary at the end
+make test                    # all the headless suites (every action on generated files), summary at the end
 make ui-test                 # interaction tests: real windows off-screen, driven with synthetic clicks, drags and typing
 scripts/test-waveform.sh     # channel layouts, bleeps on video, editor times, offscreen editor renders
 scripts/test-pdf-metadata.sh # page lists, merge picks and metadata writers, read back after each run
@@ -413,7 +422,7 @@ scripts/test-image-editor.sh # crop / redact / annotate engines, from the JSON t
 An app built without `make tools` uses Homebrew's tools (`brew install ffmpeg webp`); the test suites use
 `vendor/bin` when `make tools` has run. External tools are looked up in the folder set in Settings first (so you can
 use your own ffmpeg build), then the app's `Contents/Resources/bin`, then `/opt/homebrew/bin`, `/usr/local/bin`,
-`/usr/bin` and `/bin`. CI (`.github/workflows/ci.yml`) runs all eight suites against the bundled ffmpeg plus a
+`/usr/bin` and `/bin`. CI (`.github/workflows/ci.yml`) runs all the suites against the bundled ffmpeg plus a
 release build on every push and pull request.
 
 ### Command line
