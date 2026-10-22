@@ -5,6 +5,37 @@ enum WheelMode {
     case convert
     /// ⌥⇧ while dragging: tools for that kind of file.
     case tools
+    /// ⌃ while dragging: things to do with the file itself (copy its path, hash it, AirDrop it…).
+    case files
+
+    /// Usage buckets and `--list` use this ("convert", "tools", "files").
+    var name: String { "\(self)" }
+
+    var title: String {
+        switch self {
+        case .convert: "Convert"
+        case .tools: "Tools"
+        case .files: "File actions"
+        }
+    }
+
+    /// The modifier keys that bring this wheel up mid-drag.
+    var keys: [String] {
+        switch self {
+        case .convert: ["⇧"]
+        case .tools: ["⌥", "⇧"]
+        case .files: ["⌃"]
+        }
+    }
+
+    /// The wheel the click-mode chip (and Tab) switches to.
+    var next: WheelMode {
+        switch self {
+        case .convert: .tools
+        case .tools: .files
+        case .files: .convert
+        }
+    }
 }
 
 enum ParamValue: Hashable {
@@ -82,6 +113,11 @@ struct JobContext {
 enum JobOutput {
     case files([URL])
     case text(title: String, body: String)
+    /// A short result with no file behind it (a path, a hash). The app copies it to the clipboard and shows it on
+    /// the job card; the CLI prints it.
+    case value(String)
+    /// Something that happened outside Clementine (Terminal opened, AirDrop sent). The message is for the card / CLI.
+    case done(String)
 }
 
 typealias Editor = @MainActor (_ urls: [URL], _ defaults: ParamValues, _ apply: @escaping (ParamValues) -> Void) -> Void
@@ -106,6 +142,8 @@ struct Action: Identifiable {
     /// It calls `apply` with the chosen values (complex data goes in `.text` values, e.g. JSON); the job then
     /// runs through `run` like any other, so the same action also works from the CLI with `--set`.
     var editor: Editor? = nil
+    /// A user's saved preset (see `Presets.swift`): the title is their name, and it runs without asking.
+    var isPreset = false
     let accepts: (FileItem) -> Bool
     let run: (JobContext) async throws -> JobOutput
 
@@ -123,10 +161,22 @@ func kinds(_ kinds: FileKind...) -> (FileItem) -> Bool {
 }
 
 enum ActionRegistry {
-    static let all: [Action] = ConvertActions.all + ToolActions.all + ConvertActions.archiveCreate
+    static let all: [Action] = ConvertActions.all + ToolActions.all + ConvertActions.archiveCreate + FileActions.all
 
     static func find(_ id: String) -> Action? {
-        all.first { $0.id == id }
+        all.first { $0.id == id } ?? PresetStore.shared.action(id: id)
+    }
+
+    /// One wheel's catalog in wheel order: each preset follows the action it's based on.
+    static func catalog(_ mode: WheelMode) -> [Action] {
+        let base: [Action] = switch mode {
+        case .convert: ConvertActions.all
+        case .tools: ToolActions.all
+        case .files: FileActions.all
+        }
+        let presets = PresetStore.shared.actions()
+        guard !presets.isEmpty else { return base }
+        return base.flatMap { action in [action] + presets.filter { $0.basedOn == action.id }.map(\.action) }
     }
 
     /// The slices to show for these files: visible candidates, most used first, at most 12 so labels stay readable.
@@ -141,8 +191,7 @@ enum ActionRegistry {
     static func candidates(for urls: [URL], mode: WheelMode) -> [Action] {
         let items = urls.map(FileItem.init)
         guard !items.isEmpty else { return [] }
-        let candidates = mode == .convert ? ConvertActions.all : ToolActions.all
-        var result = candidates.filter { action in
+        var result = catalog(mode).filter { action in
             (action.minInputs...action.maxInputs).contains(items.count) && items.allSatisfy(action.accepts)
         }
         // Archiving is the fallback for files we can't otherwise convert (folders, mixed selections, unknown types).

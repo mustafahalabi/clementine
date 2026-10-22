@@ -37,7 +37,7 @@ struct WheelView: View {
         .animation(reduceMotion ? Theme.ease : Theme.spring, value: model.visible)
         .animation(reduceMotion ? Theme.ease : Theme.spring, value: model.mode)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(model.mode == .convert ? "Convert wheel" : "Tools wheel")
+        .accessibilityLabel("\(model.mode.title) wheel")
     }
 }
 
@@ -178,7 +178,8 @@ private struct SliceLabel: View {
 
     var body: some View {
         Group {
-            if mode == .convert || action.symbol == nil {
+            // Formats read best as big text; tools, presets and file actions as an icon with a caption.
+            if (mode == .convert && !action.isPreset) || action.symbol == nil {
                 Text(action.title)
                     .font(.system(size: 14.5, weight: .bold, design: .rounded))
                     .tracking(0.3)
@@ -241,7 +242,7 @@ private struct Hub: View {
         .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
         .animation(Theme.snappy, value: target?.id)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(target.map { "\(model.mode == .convert ? "Convert to" : "Apply") \($0.title)" } ?? model.summary)
+        .accessibilityLabel(target?.accessibilityName ?? model.summary)
         .accessibilityHint("Drop or click here to cancel")
     }
 
@@ -265,11 +266,14 @@ private struct Hub: View {
     private var caption: some View {
         if let target {
             VStack(spacing: 1) {
-                Text(model.mode == .convert ? "Convert to" : "Apply")
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .opacity(0.85)
+                // File actions name themselves ("Copy Path"), so they get no verb.
+                if let verb = Self.verb(for: target) {
+                    Text(verb)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .opacity(0.85)
+                }
                 Text(target.title)
-                    .font(.system(size: model.mode == .convert ? 17 : 12.5, weight: .heavy, design: .rounded))
+                    .font(.system(size: target.mode == .convert && !target.isPreset ? 17 : 12.5, weight: .heavy, design: .rounded))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.7)
@@ -295,7 +299,17 @@ private struct Hub: View {
     }
 }
 
-/// Says which wheel is up, under the ring. In click mode it's also the switch to the other wheel (or Tab).
+extension Hub {
+    static func verb(for action: Action) -> String? {
+        switch action.mode {
+        case .convert: action.isPreset ? "Apply" : "Convert to"
+        case .tools: "Apply"
+        case .files: nil
+        }
+    }
+}
+
+/// Says which wheel is up, under the ring. In click mode it's also the switch to the next wheel (or Tab).
 private struct ModeChip: View {
     let mode: WheelMode
     var switchable = false
@@ -304,8 +318,7 @@ private struct ModeChip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Label(mode == .convert ? "CONVERT" : "TOOLS",
-                  systemImage: mode == .convert ? "arrow.triangle.2.circlepath" : "wand.and.stars")
+            Label(mode == .files ? "FILE" : mode.title.uppercased(), systemImage: Self.symbol(mode))
             if switchable {
                 Image(systemName: "arrow.left.arrow.right")
                     .font(.system(size: 8, weight: .black))
@@ -327,8 +340,16 @@ private struct ModeChip: View {
         .contentTransition(.interpolate)
         .animation(Theme.snappy, value: hovered)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(mode == .convert ? "Convert wheel" : "Tools wheel")
-        .accessibilityHint(switchable ? "Click or press Tab to switch to the \(mode == .convert ? "tools" : "convert") wheel" : "")
+        .accessibilityLabel("\(mode.title) wheel")
+        .accessibilityHint(switchable ? "Click or press Tab to switch to the \(mode.next.title.lowercased()) wheel" : "")
+    }
+
+    static func symbol(_ mode: WheelMode) -> String {
+        switch mode {
+        case .convert: "arrow.triangle.2.circlepath"
+        case .tools: "wand.and.stars"
+        case .files: "doc.on.doc"
+        }
     }
 }
 
@@ -336,11 +357,19 @@ private struct EmptyNotice: View {
     let mode: WheelMode
 
     var body: some View {
-        Label(mode == .convert ? "No conversions for this file" : "No tools for this file", systemImage: "nosign")
+        Label(Self.text(mode), systemImage: "nosign")
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(.regularMaterial, in: Capsule())
+    }
+
+    static func text(_ mode: WheelMode) -> String {
+        switch mode {
+        case .convert: "No conversions for this file"
+        case .tools: "No tools for this file"
+        case .files: "No file actions for this file"
+        }
     }
 }
 
@@ -391,5 +420,5 @@ struct WindowVisibilityReader: NSViewRepresentable {
 
 extension Action {
     /// What VoiceOver reads for a slice: "Convert to PNG", "Compress".
-    var accessibilityName: String { mode == .convert ? "Convert to \(title)" : title }
+    var accessibilityName: String { mode == .convert && !isPreset ? "Convert to \(title)" : title }
 }

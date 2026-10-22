@@ -22,7 +22,7 @@ final class WheelController {
     }
 
     /// Shows the wheel without a drag, for working on its looks:
-    /// `Clementine.app/Contents/MacOS/Clementine --demo-wheel [--tools] [--click] [--hover N] file…`
+    /// `Clementine.app/Contents/MacOS/Clementine --demo-wheel [--tools | --files] [--click] [--hover N] file…`
     private func demo(_ arguments: [String]) {
         var mode = WheelMode.convert
         var hovered: Int?
@@ -32,6 +32,7 @@ final class WheelController {
         while let argument = rest.popFirst() {
             switch argument {
             case "--tools": mode = .tools
+            case "--files": mode = .files
             case "--click": clickable = true
             case "--hover": hovered = rest.popFirst().flatMap { Int($0) }
             default: urls.append(URL(fileURLWithPath: argument).standardizedFileURL)

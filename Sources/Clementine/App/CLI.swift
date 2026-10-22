@@ -8,7 +8,8 @@ import SwiftUI
 ///     Clementine --run tool.fit --set megabytes=1.5 photo.heic
 ///     Clementine --history
 enum CLI {
-    static let commands: Set = ["--list", "--run", "--render-wheel", "--history", "--undo", "--clear-history", "--help"]
+    static let commands: Set = ["--list", "--run", "--render-wheel", "--history", "--undo", "--clear-history", "--help",
+                                "--preset", "--list-presets", "--save-preset", "--rename-preset", "--delete-preset"]
 
     static func run(_ arguments: [String]) -> Never {
         _ = NSApplication.shared
@@ -56,20 +57,26 @@ enum CLI {
     private static let usage = """
         usage: Clementine --list <file>...
                Clementine --run <action-id> [--set key=value]... [--record] <file>...
+               Clementine --preset <name> [--record] <file>...
+               Clementine --list-presets
+               Clementine --save-preset <name> --action <action-id> [--set key=value]...
+               Clementine --rename-preset <name> <new name> | --delete-preset <name>
                Clementine --history | --undo | --clear-history
 
         --list shows each wheel as it would appear (most used first, hidden slices marked).
         --run processes several files in parallel, like the app. --record also logs usage and history.
         --undo moves the newest history entry's outputs to the Trash.
+        File actions (⌃ wheel) print their result: --run file.sha256 movie.mov prints the hash.
         """
 
     private static func execute(_ arguments: [String]) async -> Int32 {
         var arguments = arguments
-        switch arguments.removeFirst() {
+        let command = arguments.removeFirst()
+        switch command {
         case "--list":
             let urls = arguments.map(fileURL)
             guard !urls.isEmpty else { print(usage); return 2 }
-            for (mode, name) in [(WheelMode.convert, "Convert (⇧)"), (.tools, "Tools (⌥⇧)")] {
+            for (mode, name) in [(WheelMode.convert, "Convert (⇧)"), (.tools, "Tools (⌥⇧)"), (.files, "Files (⌃)")] {
                 print(name)
                 let shown = ActionRegistry.actions(for: urls, mode: mode)
                 let hidden = HiddenActions.ids
@@ -124,6 +131,7 @@ enum CLI {
                 switch result {
                 case .success(.files(let outputs)): outputs.forEach { print($0.path) }
                 case .success(.text(let title, let body)): print("== \(title) ==\n\(body)")
+                case .success(.value(let value)), .success(.done(let value)): print(value)
                 case .failure(is CancellationError) where report.cancelled:
                     fflush(stdout)
                     fputs("cancelled: \(unit[0].lastPathComponent)\n", stderr)
@@ -142,6 +150,22 @@ enum CLI {
             }
             // Interrupted runs exit 128 + signal (see `run`); a cancel without a signal still isn't a success.
             return report.failures.isEmpty && !report.cancelled ? 0 : 1
+
+        case "--preset":
+            // A preset is an action like any other (`--run preset.…` works too); this looks it up by name.
+            guard let name = arguments.first else { print(usage); return 2 }
+            guard let preset = PresetStore.shared.find(name) else {
+                let names = PresetStore.shared.presets.map { "“\($0.name)”" }
+                return usageError("no preset called “\(name)”" + (names.isEmpty ? " (there are none yet)" : "; presets: \(names.joined(separator: ", "))"))
+            }
+            guard PresetStore.shared.action(id: preset.id) != nil else {
+                let reason = PresetStore.shared.snapshot.problems.first { $0.preset.id == preset.id }?.reason ?? "it isn't valid"
+                return usageError("preset “\(preset.name)” can't run: \(reason)")
+            }
+            return await execute(["--run", preset.id] + arguments.dropFirst())
+
+        case "--list-presets", "--save-preset", "--rename-preset", "--delete-preset":
+            return presetCommand(command, arguments)
 
         case "--history":
             let entries = await MainActor.run { HistoryStore.shared.entries }
@@ -172,10 +196,10 @@ enum CLI {
 
         case "--render-wheel":
             // Dev aid: draws the wheel to a PNG (materials render flat).
-            // --render-wheel out.png [--tools] [--hover N] [--light] [--click [--chip]] file…
+            // --render-wheel out.png [--tools | --files] [--hover N] [--light] [--click [--chip]] file…
             guard arguments.count >= 2 else { print(usage); return 2 }
             let output = fileURL(arguments.removeFirst())
-            let mode: WheelMode = arguments.contains("--tools") ? .tools : .convert
+            let mode: WheelMode = arguments.contains("--tools") ? .tools : arguments.contains("--files") ? .files : .convert
             let appearance = NSAppearance(named: arguments.contains("--light") ? .aqua : .darkAqua)
             var hovered: Int?
             if let flag = arguments.firstIndex(of: "--hover") {
@@ -224,7 +248,7 @@ enum CLI {
         return 0
     }
 
-    private static func usageError(_ message: String) -> Int32 {
+    static func usageError(_ message: String) -> Int32 {
         fputs("\(message)\n", stderr)
         return 2
     }
@@ -264,7 +288,7 @@ enum CLI {
         value == value.rounded() ? String(Int(value)) : String(value)
     }
 
-    private static func fileURL(_ path: String) -> URL {
+    static func fileURL(_ path: String) -> URL {
         URL(fileURLWithPath: path).standardizedFileURL
     }
 }

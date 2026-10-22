@@ -9,6 +9,9 @@ struct BatchReport {
 
     var files: [URL] = []
     var texts: [(title: String, body: String)] = []
+    /// `.value` results (paths, hashes) and `.done` messages, in order.
+    var values: [String] = []
+    var notes: [String] = []
     var failures: [Failure] = []
     /// Per unit, in order.
     var outcomes: [(unit: [URL], result: Result<JobOutput, Error>)] = []
@@ -88,6 +91,10 @@ enum BatchRunner {
                 report.files += outputs
             case .success(.text(let title, let body)):
                 report.texts.append((title, body))
+            case .success(.value(let value)):
+                report.values.append(value)
+            case .success(.done(let message)):
+                report.notes.append(message)
             case .failure(is CancellationError) where report.cancelled:
                 break
             case .failure(let error):
