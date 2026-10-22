@@ -217,7 +217,7 @@ size() { stat -f%z "$1"; }
 # ---------------------------------------------------------------- cases
 echo "iPhone-style MOV (timecode + location)"
 expect "strip keeps a/v, drops location"  '[[ $(nstreams "$OUT" v) == 1 && $(nstreams "$OUT" a) == 1 ]] && ! ffprobe -v error -show_entries format_tags "$OUT" | grep -q 48.85' -- tool.metadata.strip "$F/iphone.mov"
-expect "split 1s → ≥3 parts, all playable" '[[ $(ls "$OUT" | wc -l) -ge 2 ]] && for p in "$OUT"/*; do [[ $(nstreams "$p" v) == 1 ]] || exit 1; done' -- tool.media.split --set seconds=1 "$F/iphone.mov"
+expect "split 1s → ≥3 parts, all playable" '[[ $(ls "$OUT" | wc -l) -ge 2 ]] && ( for p in "$OUT"/*; do [[ $(nstreams "$p" v) == 1 ]] || exit 1; done )' -- tool.media.split --set seconds=1 "$F/iphone.mov"
 expect "trim → mov ~1s" 'near "$(dur "$OUT")" 1.0' -- tool.media.trim --set start=1 --set end=2 "$F/iphone.mov"
 expect "mute keeps video only" '[[ $(nstreams "$OUT" a) == 0 && $(nstreams "$OUT" v) == 1 ]]' -- tool.video.mute "$F/iphone.mov"
 expect "→ mp4" '[[ -f "$OUT" ]]' -- convert.media.mp4 "$F/iphone.mov"

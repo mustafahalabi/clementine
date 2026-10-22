@@ -41,6 +41,23 @@ test_setup() {
   mkdir -p "$F"
   trap _test_cleanup EXIT
 
+  # GitHub's macOS VMs print "IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver" to stdout from the
+  # graphics stack, which would read as an output path. Run the binary through a filter that drops it (stderr is
+  # filtered too and comes out after stdout). The exit status is the binary's.
+  if [[ -n "${BIN:-}" ]]; then
+    cat > "$WORK/clementine" <<WRAP
+#!/usr/bin/env bash
+noise='^IOServiceMatchingfailed for: '
+err="\$(mktemp "$WORK/stderr.XXXXXX")"
+"$BIN" "\$@" 2>"\$err" | { grep -v "\$noise" || true; }
+status=\${PIPESTATUS[0]}
+grep -v "\$noise" "\$err" >&2; rm -f "\$err"
+exit \$status
+WRAP
+    chmod +x "$WORK/clementine"
+    BIN="$WORK/clementine"
+  fi
+
   local tools="${CLEMENTINE_TEST_TOOLS:-}"
   if [[ -z "$tools" && -x vendor/bin/ffmpeg ]]; then tools="$PWD/vendor/bin"; fi
   if [[ -n "$tools" && "$tools" != system ]]; then

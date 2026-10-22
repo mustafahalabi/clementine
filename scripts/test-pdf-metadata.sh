@@ -90,7 +90,11 @@ expect() {
   local out
   if ! out="$("$BIN" --run "$@" 2>&1)"; then bad "$name" "$out"; return; fi
   OUT="$(echo "$out" | head -1)"
-  if eval "${check[*]}"; then ok "$name"; else bad "$name" "assertion failed: ${check[*]} (output: $OUT)"; fi
+  if eval "${check[*]}"; then ok "$name"; return; fi
+  # For media outputs, show what ffprobe sees (tags and streams), so a failure on CI can be read from the log.
+  local seen=""
+  [[ "$OUT" =~ \.(mp3|m4a|mov|mp4|opus|flac)$ ]] && seen=" ffprobe: $(ffprobe -v error -show_entries format_tags:stream=codec_type,codec_tag_string -of compact "$OUT" 2>&1 | tr '\n' ' ')"
+  bad "$name" "assertion failed: ${check[*]} (output: $OUT)$seen"
 }
 # expect_error <name> <substring> -- <action args…>: action must fail with a readable message containing substring.
 expect_error() {
