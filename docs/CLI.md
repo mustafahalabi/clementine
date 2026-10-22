@@ -83,6 +83,7 @@ file. Output names are reserved while a batch runs, so `dup.png` + `dup.bmp` →
 - failures: `error: <file name>: <message>` on stderr. Other files still finish.
 
 Outputs go next to the input and never overwrite: `photo.jpg`, `photo (compressed).jpg`, `photo (compressed) 2.jpg`.
+Names differing only by case count as clashes, so `Clip.mov` + `clip.ts` → MP4 give `Clip.mp4` and `clip 2.mp4`.
 
 **Exit codes**
 
@@ -106,7 +107,9 @@ History holds the last 50 jobs that produced files (text-only results aren't rec
 ### `--undo`
 
 Moves the outputs of the newest entry whose files still exist to the Trash, removes that entry, and prints where
-each file went (for example `~/.Trash/clip.mp3`). Entries whose outputs are all gone are skipped. Prints
+each file went (for example `~/.Trash/clip.mp3`). Entries whose outputs are all gone are skipped. Outputs that
+changed after the job wrote them (edited, or replaced by another file) are left in place with a note on stderr;
+if none could be trashed it prints `error: <names> changed after Clementine made it…` and exits 1. Prints
 `nothing to undo` and exits 1 when there's nothing to undo.
 
 ### `--clear-history`
@@ -239,6 +242,11 @@ None of these take parameters.
 | `convert.archive.tar` | TAR | archive, not tar | 1+ | no |
 | `convert.archive.gzip` | GZIP | archive, not gz/tgz | 1+ | no |
 | `archive.zip` `archive.tar` `archive.gzip` | ZIP, TAR, GZIP | anything (fallback, see `--list`) | 1+ | **yes** |
+
+Extracting (and repacking, which extracts first) fails with `<name> expands to far more than an archive of its size
+should…` when the contents would exceed 250× the archive's size (and 1 GiB), or with `There isn't enough free
+space…` when they'd leave less than 512 MB free; nothing is left behind. Symlinks pointing outside the extracted
+items are dropped. Created ZIPs mark non-ASCII names as UTF-8.
 
 ### Tools wheel (⌥⇧)
 
