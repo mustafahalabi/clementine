@@ -4,7 +4,7 @@ A menu bar app for macOS. Hold **⇧ Shift** while dragging a file and a wheel o
 
 Everything runs locally. Nothing is uploaded.
 
-**Docs:** [Architecture](docs/ARCHITECTURE.md) · [Testing](docs/TESTING.md) · [CLI & action catalog](docs/CLI.md) · [Releasing](RELEASING.md) · [Changelog](CHANGELOG.md) · [Contributor notes](CLAUDE.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
+**Docs:** [Architecture](docs/ARCHITECTURE.md) · [Testing](docs/TESTING.md) · [CLI & action catalog](docs/CLI.md) · [Releasing](RELEASING.md) · [Changelog](CHANGELOG.md) · [Agent & contributor guide](AGENTS.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 ## Install
 
