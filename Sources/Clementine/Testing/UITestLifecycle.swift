@@ -16,14 +16,15 @@ extension UITest {
             t.shell("ffmpeg -loglevel error -y -f lavfi -i testsrc2=size=1280x720:rate=30 -t 30 -c:v libx264 -preset ultrafast '\(video.path)'")
             let listing = { (try? FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()) ?? [] }
             let before = listing()
-            let output = folder.appendingPathComponent("long.webm")
+            // Written under a hidden temporary name until it's complete (see Output.atomically).
+            let staged = { listing().contains { $0.hasPrefix(Output.tempPrefix) && $0.hasSuffix("-long.webm") } }
 
             let delegate = AppDelegate()
             t.check(delegate.applicationShouldTerminate(NSApp) == .terminateNow, "quits at once when nothing runs")
 
             JobRunner.shared.execute(action, urls: [video], params: action.defaults)
-            t.check(t.wait(15) { ProcessRunner.runningCount > 0 && FileManager.default.fileExists(atPath: output.path) },
-                    "the encode is writing its output")
+            t.check(t.wait(15) { ProcessRunner.runningCount > 0 && staged() },
+                    "the encode is writing its output (under a hidden name)")
             t.check(JobRunner.shared.running.count == 1, "the job is listed as running")
 
             // What applicationShouldTerminate does after returning .terminateLater (minus the reply, which would quit).
