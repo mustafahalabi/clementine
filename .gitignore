@@ -8,3 +8,6 @@ vendor/bin/*
 .DS_Store
 vendor/tools.txt
 dist/
+
+# Launch film renders (regenerate with marketing/video/scripts/)
+marketing/video/out/

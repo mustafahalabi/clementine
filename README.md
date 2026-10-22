@@ -451,6 +451,23 @@ pointer. Adding an action means adding an `Action` to `ConvertActions` or `ToolA
 predicate, optional `parameters` (they get a settings sheet automatically) and a `run` closure.
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the rest.
 
+### Launch film
+
+The film, its 9:16 social cut and the README loop are code: a [Remotion](https://www.remotion.dev) project in
+[`marketing/video/`](marketing/video/README.md) built from offscreen renders of the real app, with narration, score
+and sound effects from ElevenLabs. The script and shot list are in
+[`SCRIPT.md`](marketing/video/SCRIPT.md). Renders go to `marketing/video/out/`, which isn't committed; the web copy
+linked above lives in `docs/media/`.
+
+```sh
+cd marketing/video && npm install
+scripts/render-app-assets.sh   # real Clementine UI into public/app/
+scripts/render.sh              # the film → out/clementine-launch.mp4
+scripts/render-cuts.sh         # README loop + 9:16 cut
+```
+
+Regenerating the audio needs an ElevenLabs API key in the login keychain (`elevenlabs-api-key`).
+
 ### Release
 
 `make release` (or `scripts/release.sh`) builds the app, signs everything inside-out with the hardened runtime,
