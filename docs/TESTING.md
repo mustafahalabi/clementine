@@ -118,9 +118,13 @@ covering its Close button; the stack is parked off-screen through `ProgressPanel
 3:1 for bold labels, ≥ 7:1 with Increase Contrast; the deep accent ≥ 4.5:1; accent text on cream and charcoal),
 `error copy` (brew hints only without bundled tools, `brew install webp` for img2webp, plain-sentence ffmpeg
 failures, the "Text (OCR)" slice), `midline` (clicks on a control's exact center land, across button styles and
-the chip picker), `preset sheet` (Save as Preset… saves the sheet's values under the suggested name; Return and
+the chip picker), `preset sheet` (suggested names fit a slice's two-line caption, dropping the action name when
+they wouldn't; Save as Preset… saves the sheet's values under the suggested name; Return and
 Esc belong to the name row while it's open and to Apply/Cancel otherwise; a taken name is refused; the preset is a
-slice after its action), `preset settings` (reorder, hide, rename and delete from Settings › Wheel), `file actions
+slice after its action), `preset settings` (reorder, hide, rename with Return and with Tab, the row
+showing the new name, and delete from Settings › Wheel), `settings fit` (Settings capped to a short screen asks
+for the cap's height, keeps its natural height when there's room, and the scroll wheel reaches the tools footer),
+`sheet fit` (Cut Out on a flat picture shows "No subject found"; the sheet's buttons fit), `file actions
 wheel` (the ⌃/⇧/⌥⇧ rules including the 0.25 s ⌃ hold and the Settings switch, the slices for files and folders,
 Tab cycling the three click-mode wheels, a copied value on the job card) and `lifecycle quit` (a running encode stopped the way quitting stops it: no tool, job or partial
 output left; it runs last because it refuses tool launches afterwards): 82 checks,
@@ -202,8 +206,10 @@ them. Test the bundled app (`make install` copies it to `/Applications`):
 
 - [ ] **Finder drag + ⇧**: drag a file in Finder and hold ⇧. The convert wheel appears at the pointer. Drop on a
       slice, and the output appears next to the original (revealed in Finder if enabled).
-- [ ] **⌥⇧ mid-drag**: switching modifiers during the drag swaps to the tools wheel and back. Releasing the
-      modifiers, or dropping elsewhere, hides the wheel and leaves Finder's drop behaving normally.
+- [ ] **⌥⇧ mid-drag**: switching modifiers during the drag swaps to the tools wheel and back. Releasing all the
+      modifiers keeps the wheel that's up (on purpose, so the keys can be let go before the drop). Dropping on the
+      hub cancels (Finder slides the file back); dropping outside the wheel hides it and Finder's drop behaves
+      normally.
 - [ ] Multi-file drags (batch tools appear, progress card counts up, Undo on the finished card), a folder
       (archives only), parameter sheets and each editor window opening from a slice.
 - [ ] **⌃ mid-drag**: start a Finder drag, then hold ⌃ alone. After about a quarter second the file actions wheel
@@ -212,7 +218,8 @@ them. Test the bundled app (`make install` copies it to `/Applications`):
       menu (expected). With Settings › General › "⌃ opens the file actions wheel" off, nothing appears.
 - [ ] **File actions**: Copy Path / Copy Name / SHA-256 / Data URI put the value on the clipboard (`pbpaste`) and
       show it on the card; Open in Terminal opens a Terminal window in the folder; Reveal selects it in Finder;
-      AirDrop shows the picker in front (sending and cancelling both end the card).
+      AirDrop shows the picker in front; sending and cancelling both end the card with "AirDrop closed" (macOS 26
+      reports Cancel as a finished share, so the card never claims the files arrived).
 - [ ] **Presets**: Save as Preset… in a tool's sheet adds a slice (with a small bookmark) after that tool; it runs
       without the sheet. Rename, reorder, hide and delete in Settings › Wheel update the wheel. A
       `--save-preset` from Terminal shows up in the running app.

@@ -13,12 +13,7 @@ enum ResultWindow {
         window.host(ResultView(title: title, text: body), sizing: [.minSize])
         window.center()
         windows.append(window)
-        var token: NSObjectProtocol?
-        token = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak window] _ in
-            MainActor.assumeIsolated { windows.removeAll { $0 === window } }
-            if let token { NotificationCenter.default.removeObserver(token) }
-            token = nil
-        }
+        window.onceClosed { [weak window] in windows.removeAll { $0 === window } }
         window.present()
     }
 }

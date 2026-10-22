@@ -176,7 +176,7 @@ wheel.
 | `batch` | Run once with all files (`[urls]`) instead of once per file. |
 | `maxConcurrent` | Overrides `BatchRunner.limit` (e.g. `convert.image.mp4` uses ffmpeg, so 2). |
 | `parameters` | `.slider`, `.number`, `.choice`, `.text`. `ParameterWindow` builds a form from them automatically, and `defaults` collects the initial values. |
-| `preview` | `(URL, ParamValues) async -> NSImage?`, a live preview in the parameter sheet for single-image inputs (Edit, Add BG). |
+| `preview` | `(URL, ParamValues) async -> NSImage?`, a live preview in the parameter sheet for single-image inputs (Edit, Add BG, Cut Out). nil shows `previewMissing` ("No preview"; Cut Out: "No subject found") instead of the spinner. |
 | `editor` | `Editor = @MainActor (urls, defaults, apply) -> Void`. A custom window used instead of the sheet. It must end by calling `apply(ParamValues)`. |
 | `run` | `(JobContext) async throws -> JobOutput`. `JobContext` has `inputs`, `params` and a thread-safe `progress(0…1)`. Returns `.files([URL])`, `.text(title:body:)`, `.value(String)` (copied by the app, printed by the CLI) or `.done(String)` (a message: something happened outside Clementine). |
 
@@ -356,6 +356,13 @@ could end up visible but not receiving keystrokes. A non-activating panel that c
   `ProgressPanel.show` likewise sizes the window before `restack()`.
 - Windows whose content needs drags also set `isMovableByWindowBackground = false` explicitly
   (`ImageEditorWindow`, `PageOrganizer`).
+- Settings is sized by its content, capped by `SettingsFit.maxHeight` (the screen's visible height less the title
+  bar), set in `SettingsWindow.show()` before `host`/`center()`. A tab that fits keeps its natural height (form
+  `.fixedSize`, scrolling off); a taller one fills the cap and its `Form` scrolls itself (`ViewThatFits`).
+  `TopAnchor` keeps the top edge still on tab switches and the window inside the visible frame. Don't wrap a
+  grouped `Form` in a `ScrollView`: the form's own (disabled) scroll view swallows the scroll wheel.
+- `NSWindow.onceClosed` (FocusablePanel.swift) runs cleanup once on close; the sheet, result and image-editor
+  windows use it to drop themselves from their `windows` list.
 
 ### Theme, components, motion
 - `Support/Theme.swift`: the palette (`tangerine`, `blood`, `peach`, `leaf`, `cherry`), gradients, and
@@ -551,6 +558,12 @@ static array until `willClose`.
      editor windows open.
    - `DocumentEngine` is `@MainActor` because the HTML importers touch WebKit.
    - `Output` reservations exist because parallel units resolved the same "unique" name.
+   - A SwiftUI `TextField` writes its text back through the binding when it loses focus, *after* `onChange(of:
+     focus)` has run. Settings › Presets only accepts drafts while the field has focus, or the old name came back.
+   - AirDrop (`NSSharingService` `.sendViaAirDrop`) calls `didShareItems` when Cancel is pressed in its picker on
+     macOS 26.1, so Clementine says "AirDrop closed" and never claims the files were sent.
+   - Wheel captions are two lines in a 62 pt column (`SliceCaption`). `SliceCaption.fits` measures with SwiftUI
+     itself, and suggested preset names use it to drop the action's name when the full name won't fit.
 
 ## Testing entry points (quick reference)
 

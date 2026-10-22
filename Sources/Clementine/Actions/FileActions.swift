@@ -39,8 +39,10 @@ enum FileActions {
         Action(id: "file.airdrop", title: "AirDrop", symbol: "dot.radiowaves.left.and.right", mode: .files, batch: true,
                accepts: { _ in true },
                run: { ctx in
-                   let sent = try await FileEffects.airDrop(ctx.inputs)
-                   return .done(sent ? "Sent with AirDrop" : "AirDrop cancelled")
+                   switch try await FileEffects.airDrop(ctx.inputs) {
+                   case .closed: return .done("AirDrop closed")
+                   case .cancelled: return .done("AirDrop cancelled")
+                   }
                }),
     ]
 
@@ -132,12 +134,21 @@ enum FileEffects {
         NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
-    /// Shows the AirDrop picker and waits for it: true once sent, false if the user cancelled.
+    /// How the AirDrop picker ended. There's deliberately no "sent": macOS 26 reports `didShareItems` when the
+    /// picker's Cancel is pressed too, so a finished share doesn't prove anything was delivered.
+    enum AirDropEnd: Equatable {
+        /// The picker closed: maybe after sending, maybe not.
+        case closed
+        /// macOS said the user cancelled (older systems, or Clementine's Stop button).
+        case cancelled
+    }
+
+    /// Shows the AirDrop picker and waits for it to close.
     @MainActor
-    static func airDrop(_ urls: [URL]) async throws -> Bool {
+    static func airDrop(_ urls: [URL]) async throws -> AirDropEnd {
         if simulated {
             simulate("airdrop", urls)
-            return true
+            return .closed
         }
         guard let service = NSSharingService(named: .sendViaAirDrop), service.canPerform(withItems: urls) else {
             throw ClementineError.message("AirDrop isn't available. Check that Wi-Fi and Bluetooth are on.")
@@ -154,13 +165,13 @@ enum FileEffects {
 private final class AirDropSession: NSObject, NSSharingServiceDelegate {
     private static var active: [AirDropSession] = []
     private let service: NSSharingService
-    private var continuation: CheckedContinuation<Bool, Error>?
+    private var continuation: CheckedContinuation<FileEffects.AirDropEnd, Error>?
 
     init(service: NSSharingService) {
         self.service = service
     }
 
-    func send(_ urls: [URL]) async throws -> Bool {
+    func send(_ urls: [URL]) async throws -> FileEffects.AirDropEnd {
         Self.active.append(self)
         defer { Self.active.removeAll { $0 === self } }
         service.delegate = self
@@ -170,23 +181,23 @@ private final class AirDropSession: NSObject, NSSharingServiceDelegate {
                 service.perform(withItems: urls)
             }
         } onCancel: {
-            Task { @MainActor in self.finish(.success(false)) }
+            Task { @MainActor in self.finish(.success(.cancelled)) }
         }
     }
 
-    private func finish(_ result: Result<Bool, Error>) {
+    private func finish(_ result: Result<FileEffects.AirDropEnd, Error>) {
         continuation?.resume(with: result)
         continuation = nil
     }
 
     nonisolated func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
-        MainActor.assumeIsolated { finish(.success(true)) }
+        MainActor.assumeIsolated { finish(.success(.closed)) }
     }
 
     nonisolated func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
         MainActor.assumeIsolated {
             let cancelled = (error as NSError).code == NSUserCancelledError
-            finish(cancelled ? .success(false) : .failure(ClementineError.message("AirDrop didn't send: \(error.localizedDescription)")))
+            finish(cancelled ? .success(.cancelled) : .failure(ClementineError.message("AirDrop didn't send: \(error.localizedDescription)")))
         }
     }
 }

@@ -211,7 +211,9 @@ Renders the job windows, Settings, onboarding and every editor to `<dir>/<name>-
 off-screen, then exits 0. The optional files feed the parameter-sheet preview (image) and the waveform editors
 (audio/video, with real peaks). PDF and image-editor fixtures are generated. Names include `progress`,
 `progress-undo`, `parameters`, `parameters-preview`, `result-qr`, `result-metadata`, `settings`, `settings-wheel`,
-`settings-wheel-tools`, `settings-wheel-files`, `progress-file-actions`, `parameters-save-preset`, `onboarding-N`, `trim-loading`, `trim-audio`, `trim-audio-silence`, `trim-video`, `bleep`,
+`settings-short` (Settings capped at 640 pt, as on a short screen), `settings-wheel-tools`, `settings-wheel-files`,
+`parameters-cutout` (with an image), `wheel-presets` (the image tools wheel at full size, only when presets exist;
+point `CLEMENTINE_SUPPORT_DIR` at a folder with some), `progress-file-actions`, `parameters-save-preset`, `onboarding-N`, `trim-loading`, `trim-audio`, `trim-audio-silence`, `trim-video`, `bleep`,
 `bleep-empty`, `channels-mono`, `channels-swap`, `pages`, `pages-drag`, `merge`, `metadata-image`, `metadata-image-all`, `metadata-pdf`,
 `editor-crop`, `editor-crop-turning`, `editor-crop-turned`, `editor-redact`, `editor-redact-blur`, `editor-annotate`,
 `editor-annotate-typing`.
@@ -384,7 +386,7 @@ and copied to the clipboard by the app (one line per file), messages are printed
 | `file.datauri` | Data URI | files up to 5 MB | `data:<MIME type>;base64,…` (MIME type from the extension, else `application/octet-stream`); bigger files fail with a message |
 | `file.terminal` | Open in Terminal | anything | opens Terminal.app in each enclosing folder (a folder itself for folders), once per folder; `Opened in Terminal: <folders>` |
 | `file.reveal` | Reveal in Finder | anything | selects the items in Finder; `Shown in Finder` |
-| `file.airdrop` | AirDrop | anything | shows the AirDrop picker and waits; `Sent with AirDrop` or `AirDrop cancelled`. Fails with a message when AirDrop is unavailable. |
+| `file.airdrop` | AirDrop | anything | shows the AirDrop picker and waits for it to close; `AirDrop closed`, or `AirDrop cancelled` when macOS reports a cancel. Never claims the files arrived: macOS 26 reports Cancel in the picker as a finished share, so the two can't be told apart. Fails with a message when AirDrop is unavailable. |
 
 ### Presets
 
