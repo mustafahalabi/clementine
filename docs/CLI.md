@@ -240,6 +240,11 @@ None of these take parameters.
 | `convert.archive.gzip` | GZIP | archive, not gz/tgz | 1+ | no |
 | `archive.zip` `archive.tar` `archive.gzip` | ZIP, TAR, GZIP | anything (fallback, see `--list`) | 1+ | **yes** |
 
+Documents: HTML is converted fully offline. Remote images, stylesheets, fonts, frames, `<base>`, meta refresh and
+scripts are removed before import. Relative, `file:` and `data:` images still load. Plain text and subtitles are
+read as UTF-8, UTF-16/32 (BOM, or BOM-less UTF-16) or Windows-1252. PDFs use the system's default paper size with 1"
+margins. A folder that isn't writable fails at once with "the folder isn't writable".
+
 ### Tools wheel (⌥⇧)
 
 Listed in wheel order. *Editor* means the app opens a custom window, which produces the same `--set` values.
@@ -294,6 +299,9 @@ image. Errors: non-positive size, rectangle fully outside, rotation not a multip
 **`boxes`** (`tool.image.redact`): `[{"x":10,"y":20,"w":300,"h":40}, …]`, or `auto` (also `"auto"`) to detect faces
 and lines of text with Vision. Boxes need positive `w`/`h` and at least one must overlap the image. An empty
 list, or `auto` that finds nothing, fails with "Nothing to redact". The default empty value fails as invalid JSON.
+The redacted copy also drops identifying metadata: GPS, maker notes, serial numbers, owner name, EXIF user comment,
+IPTC location and Photoshop resources. Orientation, colour profile and capture settings stay. (Compress keeps all
+metadata on purpose; use `tool.metadata.strip` to remove it.)
 
 **`shapes`** (`tool.image.annotate`): a JSON array of
 `{"kind": K, "points": [[x,y], …], "color": "#RRGGBB", "width": W, "text": "…"}`.

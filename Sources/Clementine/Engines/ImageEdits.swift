@@ -237,7 +237,9 @@ enum ImageEdits {
         }
         let seed = UInt64.random(in: .min ... .max) // one seed for every frame, so animations don't shimmer
         let edit = { (image: CGImage) throws -> CGImage in try redacted(image, boxes: boxes, style: style, seed: seed) }
-        return try await ImageEngine.saveEdit(try edit(loaded.image), from: input, loaded: loaded, suffix: "redacted", frames: edit)
+        // People redact to share safely, so the copy also loses where and with what it was taken.
+        return try await ImageEngine.saveEdit(try edit(loaded.image), from: input, loaded: loaded, suffix: "redacted",
+                                              properties: loaded.shareableProperties, frames: edit)
     }
 
     // MARK: Detection
