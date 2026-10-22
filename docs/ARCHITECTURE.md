@@ -188,8 +188,11 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   3 s, and no new launches), wait for the engines to unwind so `Output.produce` deletes their partial outputs,
   and after 10 s kill whatever is left and `Output.discardInFlight()`.
 - History: `HistoryStore` keeps the newest 50 entries (paths, action ID, title, symbol, date) as pretty-printed
-  ISO-8601 JSON. `undoable` is the newest entry that still has at least one output on disk. `undo` moves the
-  outputs to the Trash with `FileManager.trashItem` and drops the entry. The card's Undo first checks the entry
+  ISO-8601 JSON. Each entry also stores a `FileStamp` per output (inode, size, modification time; folders by inode
+  only), taken when the job finishes. `undoable` is the newest entry that still has at least one output on disk.
+  `undo` moves the outputs that still match their stamp to the Trash with `FileManager.trashItem` and drops the
+  entry; outputs edited or replaced since stay put, and if that leaves nothing to trash it throws to say so.
+  Entries saved before stamps existed (0.1.0) have none and are trusted as before. The card's Undo first checks the entry
   is still there, since it may already have been undone from the menu. `startClock()` ticks every 30 s so
   "2 min ago" stays current.
 
@@ -200,7 +203,16 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   `/usr/local/bin`, `/usr/bin`, `/bin`. `require` throws `ClementineError.missingTool`, whose message suggests
   `brew install ffmpeg` or `brew install webp`. External tools used: `ffmpeg`, `ffprobe`, `cwebp` (WebP output;
   ImageIO can't write WebP, see `ImageEngine.swift`) and `img2webp` (fetched and bundled). Archives use the
-  system `zip`, `bsdtar`, `gzip` and `bzip2`.
+  system `bsdtar` (`/usr/bin/tar`, which also writes ZIPs with the UTF-8 name flag), `gzip` and `bzip2`.
+- **ArchiveEngine** (`ArchiveEngine.swift`):
+  - Member names reach bsdtar as `./name` after `--` and are stripped back with `-s`, so names that look like
+    options or bsdtar's `@archive` syntax are only ever paths. Covers creating and repacking.
+  - Extraction (and repacking, which extracts first) runs under a bomb guard: archives with an index (zip, 7z, rar)
+    are refused up front if their listing exceeds the limit, a watchdog polls free space during extraction, and
+    the result is measured at the end. The limit is 250× the archive's size (at least 1 GiB) and never more than
+    the free space minus 512 MB.
+  - After extraction, symlinks whose real target isn't strictly inside the extracted items (absolute, `..`, via
+    other links, or dangling) are deleted.
 - **ProcessRunner.run**: stdin comes from `/dev/null`. Stdout goes to a pipe (with an optional per-line
   `onLine` callback, which ffmpeg progress uses) or to a file (`stdoutFile`, for binary output). Stderr is always
   captured. It finishes when a `DispatchGroup` has seen `terminationHandler` and EOF on both pipes. A non-zero
@@ -210,8 +222,9 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   - `probe`: ffprobe JSON with `format=duration:stream=…:stream_disposition=attached_pic`. It reads duration,
     audio channels, the first real video stream (skipping attached pictures) and subtitle codecs.
   - `readable`: rejects empty files and files with no audio or video.
-  - `run`: adds `-hide_banner -nostdin -y -loglevel error -nostats -progress pipe:1` and turns `out_time_us=`
-    into a fraction of the duration.
+  - `run`: adds `-hide_banner -nostdin -n -loglevel error -nostats -progress pipe:1` and turns `out_time_us=`
+    into a fraction of the duration. `-n` because outputs always come from `Output`: a file already at that path
+    isn't ours, so ffmpeg must fail rather than overwrite it.
   - `transcode`: wraps the run in `Output.produce`.
   - `encodeArgs`: per-container codec presets, with even-size scaling for H.264/MPEG-4/WMV and a palette
     pipeline for GIF. `streamMaps` keeps every stream and converts subtitles per container.
@@ -219,8 +232,12 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
 - **Output** (`Support/Output.swift`):
   - `file(beside:name:suffix:ext:)` writes next to the input, e.g. `photo (compressed).jpg`, and never
     overwrites. On a clash it tries `name 2`, `name 3`, and so on.
+  - Names are compared case- and normalization-insensitively, against both the folder's listing and the names
+    reserved by running jobs, so `Clip.mov` + `clip.ts` → MP4 give `Clip.mp4` and `clip 2.mp4` (on APFS/HFS+
+    `Clip.mp4` and `clip.mp4` are one file).
   - During a batch, names it hands out are reserved in a locked set, so two parallel units can't both pick
-    `photo.jpg`. The set is cleared when the last batch ends.
+    `photo.jpg`. `produce` releases a name once its file is written or abandoned, names whose files exist are
+    pruned when the set grows past 256, and the set is cleared when the last batch ends.
   - `produce(url)` deletes a half-written output if the body throws, and `filling(folder)` does the same for
     output folders.
 - Other engines: `ImageEdits` renders the editors' JSON at full resolution, in pixel coordinates of the upright
