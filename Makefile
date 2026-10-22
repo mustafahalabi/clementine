@@ -37,3 +37,10 @@ tools:
 # Signed + notarized zip/DMG in dist/ when CODESIGN_IDENTITY and NOTARY_PROFILE are set; unsigned otherwise.
 release:
 	scripts/release.sh
+
+.PHONY: ui-test
+
+# Interaction tests: real windows off-screen, driven with synthetic events (needs a logged-in GUI session).
+ui-test:
+	swift build
+	.build/debug/Clementine --ui-test

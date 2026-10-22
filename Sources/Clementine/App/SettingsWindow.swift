@@ -166,7 +166,7 @@ private struct SettingsTabs: View {
         }
         .padding(3)
         .background(Capsule().fill(Color.primary.opacity(scheme == .dark ? 0.07 : 0.05)))
-        .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1))
+        .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
     }
 }
 

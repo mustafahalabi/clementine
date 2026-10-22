@@ -482,7 +482,7 @@ private struct FileTile: View {
                             .aspectRatio(contentMode: .fill)
                             .frame(width: 84, height: 84)
                             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(0.6), lineWidth: 2))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(0.6), lineWidth: 2).allowsHitTesting(false))
                             .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
                     }
                 }

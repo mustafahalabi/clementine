@@ -307,7 +307,7 @@ enum MediaEngine {
         let windows = ranges.map { "between(t,\(TimeCode.ffmpeg($0.lowerBound)),\(TimeCode.ffmpeg($0.upperBound)))" }.joined(separator: "+")
         let graph = [
             "[0:a:0]volume=volume=0:enable='\(windows)'[muted]",
-            "sine=frequency=1000:sample_rate=48000,volume=volume=0.25,volume=volume=0:enable='not(\(windows))'[tone]",
+            "sine=frequency=1000:sample_rate=48000,volume=volume=0:enable='not(\(windows))'[tone]",
             "[muted][tone]amix=inputs=2:duration=first:normalize=0[out]",
         ].joined(separator: ";")
         let info = try await FFmpeg.readable(input)

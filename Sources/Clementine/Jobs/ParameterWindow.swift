@@ -249,7 +249,7 @@ private struct PreviewPane: View {
                 ProgressView().controlSize(.small)
             }
         }
-        .overlay(shape.strokeBorder(Theme.edge(scheme), lineWidth: 1))
+        .overlay(shape.strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
         .animation(.easeInOut(duration: 0.18), value: version)
     }
 }

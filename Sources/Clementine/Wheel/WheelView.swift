@@ -47,7 +47,7 @@ private struct Backdrop: View {
             .overlay(
                 Circle().fill(RadialGradient(colors: [Theme.tangerine.opacity(scheme == .dark ? 0.16 : 0.12), .clear],
                                              center: .center, startRadius: radius * 0.35, endRadius: radius)))
-            .overlay(Circle().strokeBorder(Theme.hairline(scheme), lineWidth: 1))
+            .overlay(Circle().strokeBorder(Theme.hairline(scheme), lineWidth: 1).allowsHitTesting(false))
             .frame(width: radius * 2, height: radius * 2)
             .shadow(color: .black.opacity(scheme == .dark ? 0.5 : 0.2), radius: 26, y: 12)
     }
@@ -231,7 +231,7 @@ private struct Hub: View {
                 .strokeBorder(AngularGradient(colors: [Theme.tangerine, Theme.peach, Theme.blood, Theme.tangerine],
                                               center: .center), lineWidth: 3)
                 .rotationEffect(.degrees(spin ? 360 : 0))
-                .padding(-3))
+                .padding(-3).allowsHitTesting(false))
         .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
         .animation(Theme.snappy, value: target?.id)
         .onAppear {
@@ -266,7 +266,7 @@ private struct Hub: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(Capsule().strokeBorder(Theme.hairline(scheme), lineWidth: 0.5))
+                    .overlay(Capsule().strokeBorder(Theme.hairline(scheme), lineWidth: 0.5).allowsHitTesting(false))
                     .padding(.bottom, 11)
             }
             .transition(.opacity)

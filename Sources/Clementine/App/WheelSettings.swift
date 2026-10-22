@@ -278,7 +278,7 @@ private struct SliceToggle: View {
                 .padding(.horizontal, 7)
                 .frame(height: 26)
                 .background(shape.fill(configuration.isOn ? Theme.card(scheme) : Color.primary.opacity(hovering ? 0.06 : 0.03)))
-                .overlay(shape.strokeBorder(configuration.isOn ? Theme.tangerine.opacity(hovering ? 0.6 : 0.3) : Theme.edge(scheme), lineWidth: 1))
+                .overlay(shape.strokeBorder(configuration.isOn ? Theme.tangerine.opacity(hovering ? 0.6 : 0.3) : Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
                 .opacity(configuration.isOn ? 1 : 0.75)
                 .contentShape(shape)
             }

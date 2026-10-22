@@ -137,7 +137,7 @@ struct TrackWell<Content: View>: View {
         content
             .background(shape.fill(scheme == .dark ? Color.black.opacity(0.35) : Color(hex: 0xF1E9E0)))
             .clipShape(shape)
-            .overlay(shape.strokeBorder(Theme.edge(scheme), lineWidth: 1))
+            .overlay(shape.strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
     }
 }
 
@@ -288,7 +288,7 @@ struct CitrusSegmented: View {
         }
         .padding(3)
         .background(Capsule().fill(Color.primary.opacity(scheme == .dark ? 0.08 : 0.05)))
-        .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1))
+        .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
     }
 }
 
@@ -359,7 +359,7 @@ struct TimeField: View {
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(Theme.card(scheme)).opacity(focused ? 1 : 0))
                 .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(invalid ? Theme.cherry : (focused ? Theme.tangerine : Theme.edge(scheme)), lineWidth: focused || invalid ? 1.5 : 1))
+                    .strokeBorder(invalid ? Theme.cherry : (focused ? Theme.tangerine : Theme.edge(scheme)), lineWidth: focused || invalid ? 1.5 : 1).allowsHitTesting(false))
                 .onSubmit(apply)
                 .onChange(of: focused) { _, isFocused in if !isFocused { apply() } }
         }

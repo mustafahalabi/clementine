@@ -397,7 +397,7 @@ private struct TypingField: View {
             .frame(minWidth: 60, alignment: .leading)
             .padding(.horizontal, 4)
             .background(RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(0.12)))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.tangerine, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3])))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.tangerine, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3])).allowsHitTesting(false))
             .offset(x: origin.x - 4, y: origin.y)
             .focused($focused)
             .onSubmit { model.commitTyping() }
@@ -421,10 +421,10 @@ private struct SwatchPicker: View {
                 } label: {
                     Circle()
                         .fill(Color(cgColor: ImageEdits.color(hex: swatch.hex) ?? .white))
-                        .overlay(Circle().strokeBorder(Color.primary.opacity(scheme == .dark ? 0.25 : 0.15), lineWidth: 1))
+                        .overlay(Circle().strokeBorder(Color.primary.opacity(scheme == .dark ? 0.25 : 0.15), lineWidth: 1).allowsHitTesting(false))
                         .frame(width: 16, height: 16)
                         .padding(3)
-                        .overlay(Circle().strokeBorder(Theme.tangerine, lineWidth: 2).opacity(chosen ? 1 : 0))
+                        .overlay(Circle().strokeBorder(Theme.tangerine, lineWidth: 2).opacity(chosen ? 1 : 0).allowsHitTesting(false))
                         .scaleEffect(hovered == swatch.hex && !chosen ? 1.12 : 1)
                         .frame(width: 24, height: 26)
                         .contentShape(Circle())

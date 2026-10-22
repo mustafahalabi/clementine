@@ -92,7 +92,7 @@ struct EditorCanvas<Overlay: View>: View {
         }
         .background(well.fill(scheme == .dark ? Color.black.opacity(0.35) : Color(hex: 0xF1E9E0)))
         .clipShape(well)
-        .overlay(well.strokeBorder(Theme.edge(scheme), lineWidth: 1))
+        .overlay(well.strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
     }
 
     /// How much to scale the turned picture so that, spun back a quarter, it matches the size it had before.
@@ -256,7 +256,7 @@ struct HandleDot: View {
     var body: some View {
         Circle()
             .fill(active ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Color.white))
-            .overlay(Circle().strokeBorder(active ? Color.white : Theme.tangerine, lineWidth: 1.5))
+            .overlay(Circle().strokeBorder(active ? Color.white : Theme.tangerine, lineWidth: 1.5).allowsHitTesting(false))
             .frame(width: size, height: size)
             .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
             .scaleEffect(active ? 1.3 : hovered ? 1.22 : 1)
@@ -276,7 +276,7 @@ struct ToolTray<Content: View>: View {
         HStack(spacing: 2) { content }
             .padding(3)
             .background(Capsule().fill(Theme.card(scheme)))
-            .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
             .shadow(color: .black.opacity(scheme == .dark ? 0.25 : 0.05), radius: 3, y: 1)
     }
 }
@@ -382,7 +382,7 @@ struct CanvasPill: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(Capsule().fill(Color.black.opacity(0.62)))
-        .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 0.5))
+        .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 0.5).allowsHitTesting(false))
         .fixedSize()
     }
 }

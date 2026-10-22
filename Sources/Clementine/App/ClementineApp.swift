@@ -6,7 +6,7 @@ enum Entry {
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
         #if DEBUG
-        if UIPreview.handle(arguments) { exit(0) }
+        if UIPreview.handle(arguments) || UITest.handle(arguments) { exit(0) }
         #endif
         if let command = arguments.first, CLI.commands.contains(command) {
             CLI.run(arguments)

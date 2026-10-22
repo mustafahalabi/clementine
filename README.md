@@ -17,6 +17,7 @@ make tools                   # optional: verified static ffmpeg/ffprobe + cwebp/
 make run                     # builds build/Clementine.app and launches it
 make install                 # copies it to /Applications
 make test                    # smoke, edge-case and stress suites: every action, run headlessly on generated files
+make ui-test                 # interaction tests: real windows off-screen, driven with synthetic clicks, drags and typing
 scripts/test-waveform.sh     # channel layouts, bleeps on video, editor times, offscreen editor renders
 scripts/test-pdf-metadata.sh # page lists, merge picks and metadata writers, read back after each run
 scripts/test-image-editor.sh # crop / redact / annotate engines, from the JSON the editors produce

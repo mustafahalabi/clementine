@@ -42,7 +42,8 @@ final class ProgressPanel: NSObject, NSWindowDelegate {
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.host(JobView(job: job, cancel: { [weak self] in self?.cancel() }, dismiss: { [weak self] in self?.close() }))
+        window.host(JobView(job: job, cancel: { [weak self] in self?.cancel() }, dismiss: { [weak self] in self?.close() }),
+                    movableByBackground: true)
     }
 
     /// Slides the card off to the right, then closes it.
@@ -226,7 +227,7 @@ struct JobView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .background(Theme.cherry.opacity(scheme == .dark ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.cherry.opacity(0.25), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.cherry.opacity(0.25), lineWidth: 1).allowsHitTesting(false))
             HStack(spacing: 8) {
                 // Partial failures can still take back the files that did get made.
                 if job.undo != nil && !job.undone {
@@ -285,7 +286,7 @@ private struct UndoPillStyle: ButtonStyle {
                         Capsule().fill(Theme.accent).opacity(hovering ? 1 : 0)
                     }
                 }
-                .overlay(Capsule().strokeBorder(Theme.tangerine.opacity(hovering ? 0 : 0.35), lineWidth: 0.75))
+                .overlay(Capsule().strokeBorder(Theme.tangerine.opacity(hovering ? 0 : 0.35), lineWidth: 0.75).allowsHitTesting(false))
                 .shadow(color: hovering ? Theme.glow : .clear, radius: 5, y: 1)
                 .scaleEffect(configuration.isPressed ? 0.94 : 1)
                 .contentShape(Capsule())

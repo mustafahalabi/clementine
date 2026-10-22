@@ -384,7 +384,7 @@ struct PageOrganizerView: View {
                     .padding(.trailing, 10)
                     .frame(height: 24)
                     .background(Capsule().fill(Theme.card(scheme)))
-                    .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1))
+                    .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
                 }
             }
         }
@@ -478,7 +478,7 @@ struct PageOrganizerView: View {
         }
         .background(well.fill(scheme == .dark ? Color.black.opacity(0.3) : Color(hex: 0xF1E9E0)))
         .clipShape(well)
-        .overlay(well.strokeBorder(Theme.edge(scheme), lineWidth: 1))
+        .overlay(well.strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
         .frame(maxHeight: .infinity)
         .animation(motion, value: zoom)
     }
@@ -762,7 +762,7 @@ private struct FileMark: View {
             .foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(Circle().fill(Color(hex: Self.colors[file % Self.colors.count])))
-            .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 0.5))
+            .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 0.5).allowsHitTesting(false))
             .shadow(color: .black.opacity(0.15), radius: 1, y: 0.5)
     }
 }

@@ -316,7 +316,7 @@ private struct RedactBoxView: View {
                         .foregroundStyle(.white)
                         .frame(width: 16, height: 16)
                         .background(Circle().fill(Theme.accent))
-                        .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1))
+                        .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1).allowsHitTesting(false))
                         .shadow(color: .black.opacity(0.3), radius: 1.5, y: 0.5)
                         .position(x: 0, y: 0)
                 }

@@ -465,7 +465,7 @@ private struct KeywordChip: View {
         .padding(.trailing, 4)
         .frame(height: 20)
         .background(Capsule().fill(Theme.tangerine.opacity(scheme == .dark ? 0.22 : 0.14)))
-        .overlay(Capsule().strokeBorder(Theme.tangerine.opacity(0.35), lineWidth: 0.5))
+        .overlay(Capsule().strokeBorder(Theme.tangerine.opacity(0.35), lineWidth: 0.5).allowsHitTesting(false))
         .onHover { hovering = $0 }
         .animation(Theme.ease, value: hovering)
     }

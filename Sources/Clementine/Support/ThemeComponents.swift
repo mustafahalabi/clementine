@@ -69,7 +69,7 @@ struct CardBackground: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(Theme.card(scheme), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Theme.edge(scheme), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
     }
 }
 
@@ -105,7 +105,7 @@ struct AccentButtonStyle: ButtonStyle {
                     Capsule().fill(fill)
                         .overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(hovering ? 0.30 : 0.18), .clear],
                                                                startPoint: .top, endPoint: .bottom)))
-                        .overlay(Capsule().strokeBorder(.white.opacity(0.2), lineWidth: 0.5))
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.2), lineWidth: 0.5).allowsHitTesting(false))
                 }
                 .shadow(color: glow.opacity(enabled ? (hovering ? 0.55 : 0.35) : 0), radius: hovering ? 8 : 5, y: 2)
                 .saturation(enabled ? 1 : 0.15)
@@ -140,7 +140,7 @@ struct SoftButtonStyle: ButtonStyle {
                 .padding(.horizontal, 14)
                 .frame(height: 28)
                 .background(Capsule().fill(Color.primary.opacity(hovering ? 0.10 : 0.055)))
-                .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
                 .opacity(enabled ? 1 : 0.5)
                 .scaleEffect(configuration.isPressed ? 0.96 : 1)
                 .contentShape(Capsule())
@@ -298,7 +298,7 @@ struct Keycap: View {
                                          startPoint: .top, endPoint: .bottom))
                     .shadow(color: .black.opacity(scheme == .dark ? 0.5 : 0.18), radius: 0, y: 1.5)
             }
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.edge(scheme), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.edge(scheme), lineWidth: 1).allowsHitTesting(false))
     }
 }
 

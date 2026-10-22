@@ -273,7 +273,7 @@ private struct BleepTrack: View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return ZStack(alignment: .topTrailing) {
             shape.fill(Theme.cherry.opacity(active ? 0.22 : 0.14))
-                .overlay(shape.strokeBorder(Theme.cherry.opacity(active ? 0.95 : 0.7), lineWidth: active ? 1.5 : 1))
+                .overlay(shape.strokeBorder(Theme.cherry.opacity(active ? 0.95 : 0.7), lineWidth: active ? 1.5 : 1).allowsHitTesting(false))
                 .overlay(alignment: .leading) { grip }
                 .overlay(alignment: .trailing) { grip }
                 .allowsHitTesting(false)

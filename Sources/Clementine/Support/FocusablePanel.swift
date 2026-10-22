@@ -26,6 +26,11 @@ final class FocusablePanel: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
+
+    /// Esc closes the panel when nothing inside it handles the key (editors' Cancel buttons do so first).
+    override func cancelOperation(_ sender: Any?) {
+        close()
+    }
     override var canBecomeMain: Bool { true }
 
     /// Brings the window forward, rising into place and fading in if it wasn't on screen.
