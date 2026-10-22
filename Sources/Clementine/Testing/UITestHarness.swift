@@ -40,7 +40,7 @@ enum UITest {
 
     /// Every suite. Areas add theirs here (keep the list sorted by area).
     static var all: [Suite] {
-        harnessSelfTest + firstRun + midline
+        harnessSelfTest + firstRun + midline + lifecycle // lifecycle last: it stops tool launches for good
     }
 
     /// Proves the harness itself: a button press, a drag and typing all reach SwiftUI.

@@ -13,12 +13,44 @@ enum CLI {
     static func run(_ arguments: [String]) -> Never {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
+        let work = Task { await execute(arguments) }
+        handleInterrupts(stopping: work)
         Task {
-            let status = await execute(arguments)
-            exit(status)
+            let status = await work.value
+            exit(interruption.withLock { $0 }.map { 128 + $0 } ?? status)
         }
         RunLoop.main.run()
         exit(0)
+    }
+
+    /// The signal that interrupted the run, if any. The exit status becomes 128 + signal, as shells expect.
+    private static let interruption = Locked<Int32?>(nil)
+    private static var signalSources: [DispatchSourceSignal] = []
+
+    /// Tools run in their own process group, so Ctrl-C or a `kill` reaches only us: stop them, let the engines
+    /// delete their partial outputs, then exit. A second signal skips the wait.
+    private static func handleInterrupts(stopping work: Task<Int32, Never>) {
+        for number in [SIGINT, SIGTERM, SIGHUP] {
+            signal(number, SIG_IGN) // otherwise the default action kills us before the source fires
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .global(qos: .userInitiated))
+            source.setEventHandler {
+                let first = interruption.withLock { current -> Bool in
+                    defer { if current == nil { current = number } }
+                    return current == nil
+                }
+                guard first else {
+                    ProcessRunner.killAll()
+                    Output.discardInFlight()
+                    exit(128 + number)
+                }
+                Task.detached {
+                    await Shutdown.stop(cancel: { work.cancel() }, waitingFor: { _ = await work.value })
+                    exit(128 + number)
+                }
+            }
+            source.resume()
+            signalSources.append(source)
+        }
     }
 
     private static let usage = """
@@ -62,19 +94,21 @@ enum CLI {
                 let argument = arguments.removeFirst()
                 if argument == "--record" {
                     record = true
-                } else if argument == "--set", !arguments.isEmpty {
-                    let pair = arguments.removeFirst().split(separator: "=", maxSplits: 1).map(String.init)
-                    guard pair.count == 2, let parameter = action.parameters.first(where: { $0.key == pair[0] }) else {
-                        fputs("unknown parameter \(pair[0]) for \(action.id)\n", stderr)
-                        return 2
+                } else if argument == "--set" {
+                    guard !arguments.isEmpty else { return usageError("--set needs key=value") }
+                    let pair = arguments.removeFirst().split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+                    guard pair.count == 2 else { return usageError("--set needs key=value, got \"\(pair.joined())\"") }
+                    guard let parameter = action.parameters.first(where: { $0.key == pair[0] }) else {
+                        let known = action.parameters.map(\.key)
+                        let hint = known.isEmpty ? "it takes no parameters" : "valid keys: \(known.joined(separator: ", "))"
+                        return usageError("unknown parameter \(pair[0]) for \(action.id) (\(hint))")
                     }
-                    switch parameter.kind {
-                    case .slider, .number: params.storage[pair[0]] = .number(Double(pair[1]) ?? 0)
-                    case .choice(let options):
-                        let index = Int(pair[1]) ?? options.firstIndex { $0.lowercased() == pair[1].lowercased() } ?? 0
-                        params.storage[pair[0]] = .choice(index)
-                    case .text: params.storage[pair[0]] = .text(pair[1])
+                    switch parse(pair[1], for: parameter) {
+                    case .success(let value): params.storage[parameter.key] = value
+                    case .failure(let problem): return usageError("\(parameter.key)=\(pair[1]): \(problem.message)")
                     }
+                } else if argument.hasPrefix("--") && !FileManager.default.fileExists(atPath: argument) {
+                    return usageError("unknown option \(argument)")
                 } else {
                     files.append(fileURL(argument))
                 }
@@ -90,9 +124,13 @@ enum CLI {
                 switch result {
                 case .success(.files(let outputs)): outputs.forEach { print($0.path) }
                 case .success(.text(let title, let body)): print("== \(title) ==\n\(body)")
+                case .failure(is CancellationError) where report.cancelled:
+                    fflush(stdout)
+                    fputs("cancelled: \(unit[0].lastPathComponent)\n", stderr)
                 case .failure(let error):
                     fflush(stdout)
-                    fputs("error: \(unit[0].lastPathComponent): \(error.localizedDescription)\n", stderr)
+                    let message = error is CancellationError ? "Stopped unexpectedly." : error.localizedDescription
+                    fputs("error: \(unit[0].lastPathComponent): \(message)\n", stderr)
                 }
             }
             if record {
@@ -102,7 +140,8 @@ enum CLI {
                     if !report.files.isEmpty { HistoryStore.shared.record(action, inputs: files, outputs: report.files) }
                 }
             }
-            return report.failures.isEmpty ? 0 : 1
+            // Interrupted runs exit 128 + signal (see `run`); a cancel without a signal still isn't a success.
+            return report.failures.isEmpty && !report.cancelled ? 0 : 1
 
         case "--history":
             let entries = await MainActor.run { HistoryStore.shared.entries }
@@ -138,7 +177,13 @@ enum CLI {
             let output = fileURL(arguments.removeFirst())
             let mode: WheelMode = arguments.contains("--tools") ? .tools : .convert
             let appearance = NSAppearance(named: arguments.contains("--light") ? .aqua : .darkAqua)
-            let hovered = arguments.firstIndex(of: "--hover").flatMap { Int(arguments[$0 + 1]) }
+            var hovered: Int?
+            if let flag = arguments.firstIndex(of: "--hover") {
+                guard flag + 1 < arguments.count, let index = Int(arguments[flag + 1]), index >= 0 else {
+                    return usageError("--hover needs a slice number (0, 1, 2…)")
+                }
+                hovered = index
+            }
             let files = arguments.enumerated().filter { index, argument in
                 !argument.hasPrefix("--") && (index == 0 || arguments[index - 1] != "--hover")
             }.map { fileURL($0.element) }
@@ -177,6 +222,46 @@ enum CLI {
         try? bitmap.representation(using: .png, properties: [:])?.write(to: output)
         print(output.path)
         return 0
+    }
+
+    private static func usageError(_ message: String) -> Int32 {
+        fputs("\(message)\n", stderr)
+        return 2
+    }
+
+    struct InvalidValue: Error {
+        let message: String
+    }
+
+    /// Checks a `--set` value against the parameter's definition. Slider ranges are enforced (values outside
+    /// them mean nothing); typed numbers only need to be finite, since engines check them with a specific
+    /// message (Split's 1-second minimum, Target Size's "under …").
+    static func parse(_ raw: String, for parameter: Parameter) -> Result<ParamValue, InvalidValue> {
+        let text = raw.trimmingCharacters(in: .whitespaces)
+        switch parameter.kind {
+        case .slider(let range), .number(let range, _):
+            guard let value = Double(text), value.isFinite else {
+                return .failure(InvalidValue(message: "not a number"))
+            }
+            if case .slider = parameter.kind, !range.contains(value) {
+                return .failure(InvalidValue(message: "must be between \(format(range.lowerBound)) and \(format(range.upperBound))"))
+            }
+            return .success(.number(value))
+        case .choice(let options):
+            if let index = Int(text) {
+                if options.indices.contains(index) { return .success(.choice(index)) }
+            } else if let index = options.firstIndex(where: { $0.lowercased() == text.lowercased() }) {
+                return .success(.choice(index))
+            }
+            let listed = options.enumerated().map { "\($0.offset) = \($0.element)" }.joined(separator: ", ")
+            return .failure(InvalidValue(message: "not a valid choice; use an index or label: \(listed)"))
+        case .text:
+            return .success(.text(raw))
+        }
+    }
+
+    private static func format(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(value)
     }
 
     private static func fileURL(_ path: String) -> URL {

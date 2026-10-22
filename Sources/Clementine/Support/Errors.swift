@@ -56,6 +56,7 @@ enum ClementineError: LocalizedError {
              "The file doesn't have the kind of track this needs."),
             (["not divisible by 2"], "This format needs an even width and height."),
             (["unknown encoder", "encoder not found", "unsupported codec"], "This format can't be written by the bundled tools."),
+            (["stopped unexpectedly"], "The tool stopped unexpectedly before it finished."),
             (["no such file"], "A file couldn't be found. It may have been moved or renamed."),
         ]
         return causes.first { needles, _ in needles.contains(where: text.contains) }?.1

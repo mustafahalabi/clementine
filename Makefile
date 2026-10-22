@@ -24,6 +24,7 @@ test:
 	scripts/test-waveform.sh
 	scripts/test-pdf-metadata.sh
 	scripts/test-productivity.sh
+	scripts/test-lifecycle.sh
 
 clean:
 	rm -rf .build build
