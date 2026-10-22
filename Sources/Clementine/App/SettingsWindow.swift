@@ -150,7 +150,7 @@ struct SettingsView: View {
             }
 
             Section {
-                TextField("Extra tools folder", text: $toolsDirectory, prompt: Text("/opt/homebrew/bin"))
+                TextField("Custom tools folder", text: $toolsDirectory, prompt: Text("/opt/homebrew/bin"))
                 ToolStatus(name: "ffmpeg", purpose: "video & audio", directory: toolsDirectory)
                 ToolStatus(name: "ffprobe", purpose: "media info", directory: toolsDirectory)
                 ToolStatus(name: "cwebp", purpose: "WebP output", directory: toolsDirectory)
@@ -159,7 +159,7 @@ struct SettingsView: View {
                 Text("Command-line tools")
             } footer: {
                 Text(ClementineError.bundlesTools
-                     ? "Clementine includes these tools. The folder above is only used if one goes missing."
+                     ? "Clementine includes these tools. A folder set above is used first, for your own builds."
                      : "Install missing tools with `brew install ffmpeg webp`.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
