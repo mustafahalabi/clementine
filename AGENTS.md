@@ -78,7 +78,7 @@ Known issues and loose ends (none block use):
 
 ```sh
 swift build                      # debug build (.build/debug/Clementine doubles as the CLI)
-make test                        # all eight headless suites (~3 min), summary at the end; scripts/<suite>.sh runs one
+make test                        # all nine headless suites (~3 min), summary at the end; scripts/<suite>.sh runs one
 make ui-test                     # interaction tests in off-screen windows (needs a GUI session)
 make run / make install          # build the .app and launch it / copy it to /Applications
 make tools                       # fetch the verified ffmpeg/ffprobe/cwebp/img2webp into vendor/bin
@@ -87,12 +87,12 @@ scripts/release.sh               # signed + notarized release (env vars in RELEA
 
 Homebrew's `ffmpeg` and `webp` must be installed for tests (fixtures) and for app builds without `make tools`.
 After `make tools`, the suites run Clementine against the bundled tools in `vendor/bin`. CI
-(`.github/workflows/ci.yml`) runs debug and release builds and all eight suites on every push and PR.
+(`.github/workflows/ci.yml`) runs debug and release builds and all nine suites on every push and PR.
 
 ## Conventions
 
 - **Swift 6 toolchain, Swift 5 language mode**, macOS 14+.
-- **New wheel action:** add an `Action` to `Actions/ConvertActions.swift` or `Actions/ToolActions.swift` with an
+- **New wheel action:** add an `Action` to `Actions/ConvertActions.swift`, `Actions/ToolActions.swift` or `Actions/FileActions.swift` with an
   `accepts` predicate, `parameters` (they get a settings sheet for free) and a `run` closure that calls an engine.
   Interactive editors use the `editor` hook and must still produce plain `ParamValues` (JSON in `.text` values
   for complex data). Add CLI cases to a `scripts/*.sh` suite and the action to docs/CLI.md.

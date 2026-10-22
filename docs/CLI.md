@@ -10,7 +10,8 @@ BIN=.build/debug/Clementine
 BIN=build/Clementine.app/Contents/MacOS/Clementine
 ```
 
-When the first argument is one of `--list --run --history --undo --clear-history --render-wheel --help`, the
+When the first argument is one of `--list --run --preset --list-presets --save-preset --rename-preset
+--delete-preset --history --undo --clear-history --render-wheel --help`, the
 binary runs headlessly (no Dock icon, no menu-bar item) and exits. With anything else, or no arguments, it
 launches the app. Debug builds check `--render-ui` and `--ui-test` before that (see [Debug-only modes](#debug-only-modes)).
 
@@ -24,7 +25,7 @@ tools, so it needs Homebrew's `ffmpeg` (and `webp` for animated WebP), or a tool
 
 ### `--list <file>…`
 
-Prints both wheels as they would appear for this selection:
+Prints the three wheels as they would appear for this selection:
 
 ```
 $ $BIN --list photo.png
@@ -34,6 +35,9 @@ Convert (⇧)
 Tools (⌥⇧)
   tool.compress                Compress
   …
+Files (⌃)
+  file.path                    Copy Path
+  …
 ```
 
 - Shows visible slices in wheel order (most used first, see [Usage and history](#usage-history-and-settings)),
@@ -42,6 +46,7 @@ Tools (⌥⇧)
 - The archive actions (`archive.zip/tar/gzip`) are added to the convert wheel when nothing else applies, or when
   every item is a folder or an unknown type. A mix like image + audio therefore gets archives on ⇧ and only the
   shared tools (Compress, Target Size, Metadata, Remove Metadata) on ⌥⇧.
+- Presets appear in their action's wheel, right after that action (see [Presets](#presets)).
 - No files: prints usage and exits 2.
 
 ### `--run <action-id> [--set key=value]… [--record] <file>…`
@@ -86,6 +91,10 @@ file. Output names are reserved while a batch runs, so `dup.png` + `dup.bmp` →
 - files: one absolute path per line on stdout (a folder path for multi-file results such as Split, PDF → PNG
   with several pages, or 10 snapshots);
 - text results (Read QR, Metadata without `fields`): `== <file name> ==` followed by the body on stdout;
+- file-action values (`file.path`, `file.sha256`…): the value itself on stdout, nothing else, so it pipes
+  (`$BIN --run file.sha256 clip.mov | pbcopy`). The app copies the same text to the clipboard instead;
+- file-action messages (`file.terminal`, `file.reveal`, `file.airdrop`): one line on stdout, e.g.
+  `Opened in Terminal: /Users/me/Movies`;
 - failures: `error: <file name>: <message>` on stderr. Other files still finish.
 
 Outputs go next to the input and never overwrite: `photo.jpg`, `photo (compressed).jpg`, `photo (compressed) 2.jpg`.
@@ -115,12 +124,36 @@ files", see `pmset -g assertions`) so the Mac doesn't idle to sleep mid-encode.
 Hidden actions still run from the CLI. `maxInputs` is only a wheel rule: `--run` doesn't check it, but
 single-image editors (Redact, Annotate) process each file separately.
 
+### `--preset <name> [--record] <file>…`
+
+Runs a saved preset, found by name (any case) or id. Exactly `--run <preset id> …` otherwise: same options, output
+and exit codes. An unknown name exits 2 listing the presets; a preset that failed its checks exits 2 with the reason
+(`preset “Huge” can't run: level=Huge: not a valid choice…`).
+
+### `--list-presets`
+
+One line per valid preset, in the user's order, tab-separated: `<id>  <name>  <action id>  <key=value; …>`.
+Presets that fail their checks are left out and reported on stderr as `skipped preset “<name>”: <reason>`; an
+unreadable `presets.json` is reported the same way. Exit 0.
+
+### `--save-preset <name> --action <action-id> [--set key=value]…`
+
+Saves a preset and prints its id (`preset.1a2b3c4d`). `--set` works as for `--run`, but stricter: typed numbers must
+also be inside their range (`megabytes=0: must be between 0.05 and 4000 MB`). Values you don't set are saved with
+their defaults. Exits 2 for a name that's empty, longer than 60 characters, padded with spaces or already used (any
+case), an unknown action, an action without parameters (`convert.image.png has no settings to save`), or a bad value.
+
+### `--rename-preset <name> <new name>`, `--delete-preset <name>`
+
+Rename keeps the id, so a hidden preset stays hidden and its usage stays. Delete also drops it from the hidden
+slices. Exit 0, or 2 with a message (unknown preset, name taken).
+
 ### `--history`
 
 One line per entry, newest first, tab-separated:
 `<ISO-8601 date>  <action id>  <title>  <inputs joined by |>  <outputs joined by |>`.
 
-History holds the last 50 jobs that produced files (text-only results aren't recorded), stored in
+History holds the last 50 jobs that produced files (text results and file actions aren't recorded), stored in
 `~/Library/Application Support/Clementine/history.json`.
 
 ### `--undo`
@@ -135,13 +168,14 @@ if none could be trashed it prints `error: <names> changed after Clementine made
 
 Empties the history. Exit 0.
 
-### `--render-wheel <out.png> [--tools] [--hover N] [--light] [--click [--chip]] <file>…`
+### `--render-wheel <out.png> [--tools | --files] [--hover N] [--light] [--click [--chip]] <file>…`
 
 A design aid that draws the wheel for these files to a PNG without showing anything on screen. Works in release builds too.
 
 | Flag | Effect |
 |---|---|
 | `--tools` | The ⌥⇧ tools wheel (default: convert) |
+| `--files` | The ⌃ file actions wheel |
 | `--hover N` | Highlights slice N (0-based, wheel order) |
 | `--light` | Light appearance on a light backdrop (default: dark) |
 | `--click` | Click-mode wheel (Services / Open Files…), with its chip |
@@ -165,7 +199,7 @@ Renders the job windows, Settings, onboarding and every editor to `<dir>/<name>-
 off-screen, then exits 0. The optional files feed the parameter-sheet preview (image) and the waveform editors
 (audio/video, with real peaks). PDF and image-editor fixtures are generated. Names include `progress`,
 `progress-undo`, `parameters`, `parameters-preview`, `result-qr`, `result-metadata`, `settings`, `settings-wheel`,
-`settings-wheel-tools`, `onboarding-N`, `trim-loading`, `trim-audio`, `trim-audio-silence`, `trim-video`, `bleep`,
+`settings-wheel-tools`, `settings-wheel-files`, `progress-file-actions`, `parameters-save-preset`, `onboarding-N`, `trim-loading`, `trim-audio`, `trim-audio-silence`, `trim-video`, `bleep`,
 `bleep-empty`, `channels-mono`, `channels-swap`, `pages`, `pages-drag`, `merge`, `metadata-image`, `metadata-image-all`, `metadata-pdf`,
 `editor-crop`, `editor-crop-turning`, `editor-crop-turned`, `editor-redact`, `editor-redact-blur`, `editor-annotate`,
 `editor-annotate-typing`.
@@ -176,7 +210,7 @@ Runs the interaction-test suites: real windows parked off-screen, driven with sy
 only suites whose name contains one of them (case-insensitive). Prints `✓`/`✗` per check and
 `N passed, M failed`, then exits 0 or 1. See [TESTING.md](TESTING.md#ui-tests---ui-test).
 
-### `--demo-wheel [--tools] [--click] [--hover N] <file>…` (app launch flag)
+### `--demo-wheel [--tools | --files] [--click] [--hover N] <file>…` (app launch flag)
 
 Not a headless mode. The app launches normally and shows the live wheel at the center of the main screen without a
 drag, for working on its looks and motion. `--click` shows the clickable (Services-style) wheel; `--hover N`
@@ -194,8 +228,9 @@ build/Clementine.app/Contents/MacOS/Clementine --demo-wheel --tools --hover 2 ~/
 | Variable | Effect |
 |---|---|
 | `CLEMENTINE_DEFAULTS_SUITE=<suite>` | Uses that UserDefaults suite instead of the app's domain (hidden slices, usage, `orderByUsage`, settings). The bundle reads `app.clementine.Clementine`. The unbundled binary otherwise uses `~/Library/Preferences/Clementine.plist`. |
-| `CLEMENTINE_SUPPORT_DIR=<dir>` | Replaces `~/Library/Application Support/Clementine` (where `history.json` lives) |
+| `CLEMENTINE_SUPPORT_DIR=<dir>` | Replaces `~/Library/Application Support/Clementine` (where `history.json` and `presets.json` live) |
 | `CLEMENTINE_TRACE_CONCURRENCY=1` | Logs batch concurrency to stderr (see above) |
+| `CLEMENTINE_FAKE_EFFECTS=1` | `file.terminal`, `file.reveal` and `file.airdrop` only describe what they'd do on stderr (`effect: terminal /path`) instead of opening Terminal, Finder or the AirDrop picker |
 
 Use the first two whenever you `--record`, `--undo` or change defaults in tests, so real settings and history
 stay untouched. `scripts/test-productivity.sh` does this. Note that `--undo` still uses the real Trash.
@@ -205,7 +240,8 @@ stay untouched. `scripts/test-productivity.sh` does this. Note that `--undo` sti
 - Wheel order: each `--record`ed run adds 1 to a score per (file kind, wheel) bucket, e.g. `image.tools`,
   `mixed.convert`. Scores halve every 14 days. Equal scores keep catalog order. Turn this off with
   `defaults write <domain> orderByUsage -bool false`.
-- Hidden slices: `defaults write <domain> hiddenActions -array tool.image.qr convert.image.heic`.
+- Hidden slices: `defaults write <domain> hiddenActions -array tool.image.qr convert.image.heic` (preset ids too).
+- The ⌃ wheel: `defaults write <domain> controlWheel -bool false` turns it off (Settings › General).
 
 ## File kinds
 
@@ -226,7 +262,7 @@ Extensions are compared lowercased, so `PHOTO.JPG` gets no JPG slice. An audio-o
 
 ## Action catalog
 
-Generated from `Sources/Clementine/Actions/ConvertActions.swift` and `ToolActions.swift`. Inputs are min–max
+Generated from `Sources/Clementine/Actions/ConvertActions.swift`, `ToolActions.swift` and `FileActions.swift`. Inputs are min–max
 files per run; *batch* means one run with every file (one output), otherwise one run per file. Parameters list
 `key` (type) default, then allowed values. Choice indices are 0-based.
 
@@ -313,6 +349,37 @@ Listed in wheel order. *Editor* means the app opens a custom window, which produ
 
 The wheel shows at most 12 slices. A single image matches exactly 12 tools. With two or more images, Redact and
 Annotate drop out and Collage and Make PDF come in.
+
+### File actions wheel (⌃)
+
+Listed in wheel order. All are *batch* (one run with every file) and write no files: values are printed by the CLI
+and copied to the clipboard by the app (one line per file), messages are printed / shown on the job card.
+
+| id | title | accepts | result |
+|---|---|---|---|
+| `file.path` | Copy Path | anything | the absolute paths |
+| `file.name` | Copy Name | anything | the file names |
+| `file.sha256` | SHA-256 | files (not folders) | the hash; for several files `shasum`-style lines `<hash>  <name>`. Streams 1 MB at a time. |
+| `file.datauri` | Data URI | files up to 5 MB | `data:<MIME type>;base64,…` (MIME type from the extension, else `application/octet-stream`); bigger files fail with a message |
+| `file.terminal` | Open in Terminal | anything | opens Terminal.app in each enclosing folder (a folder itself for folders), once per folder; `Opened in Terminal: <folders>` |
+| `file.reveal` | Reveal in Finder | anything | selects the items in Finder; `Shown in Finder` |
+| `file.airdrop` | AirDrop | anything | shows the AirDrop picker and waits; `Sent with AirDrop` or `AirDrop cancelled`. Fails with a message when AirDrop is unavailable. |
+
+### Presets
+
+A preset is an action id, saved parameter values and a name, stored in `presets.json` in the support folder:
+
+```json
+{ "version": 1, "presets": [
+  { "id": "preset.1a2b3c4d", "name": "Under 10 MB", "action": "tool.fit", "values": { "megabytes": "10" } } ] }
+```
+
+Values use `--set` syntax, with choices saved by label. Each preset becomes a slice (id = the preset id, title = its
+name) right after its action on that action's wheel, for the files the action accepts, and runs with its values
+without a settings sheet. Presets are checked whenever the file changes: an unknown action or key, a bad choice, a
+number out of range, a duplicate name or id, or an id not starting with `preset.` skips that preset with a reason
+(stderr in the CLI, the system log and Settings › Wheel in the app). Invalid JSON loads no presets; the next save
+moves the unreadable file aside as `presets (unreadable <time>).json`. There are no built-in presets.
 
 ### Text parameter formats
 
