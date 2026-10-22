@@ -1,0 +1,38 @@
+name: Pages
+
+# Publishes site/ (the launch-film watch page) to GitHub Pages. GitHub won't play videos stored in a repo, so the
+# README links here; the film itself is copied in from docs/media/ rather than stored twice.
+on:
+  push:
+    branches: [main]
+    paths: [site/**, docs/media/**, .github/workflows/pages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble
+        run: |
+          mkdir -p _site
+          cp -R site/. _site/
+          cp docs/media/clementine-launch.mp4 _site/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

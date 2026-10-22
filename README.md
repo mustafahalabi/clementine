@@ -30,9 +30,9 @@ Drop on one, and the new file appears next to the original. Nothing leaves your 
 
 <div align="center">
 
-<a href="docs/media/clementine-launch.mp4"><img src="docs/images/launch-teaser.webp" width="820" alt="Clementine launch film: a photo dragged with Shift held opens the format wheel and drops as a JPG"></a>
+<a href="https://mustafahalabi.github.io/clementine/"><img src="docs/images/launch-teaser.webp" width="820" alt="Clementine launch film: a photo dragged with Shift held opens the format wheel and drops as a JPG"></a>
 
-<sub>▶ <a href="docs/media/clementine-launch.mp4"><b>Watch the 65-second launch film</b></a></sub>
+<sub>▶ <a href="https://mustafahalabi.github.io/clementine/"><b>Watch the 65-second launch film</b></a></sub>
 
 </div>
 
@@ -456,8 +456,9 @@ predicate, optional `parameters` (they get a settings sheet automatically) and a
 The film, its 9:16 social cut and the README loop are code: a [Remotion](https://www.remotion.dev) project in
 [`marketing/video/`](marketing/video/README.md) built from offscreen renders of the real app, with narration, score
 and sound effects from ElevenLabs. The script and shot list are in
-[`SCRIPT.md`](marketing/video/SCRIPT.md). Renders go to `marketing/video/out/`, which isn't committed; the web copy
-linked above lives in `docs/media/`.
+[`SCRIPT.md`](marketing/video/SCRIPT.md). Renders go to `marketing/video/out/`, which isn't committed. The web copy lives in `docs/media/`, and
+`.github/workflows/pages.yml` publishes it with the watch page in `site/` to
+[GitHub Pages](https://mustafahalabi.github.io/clementine/) (GitHub doesn't play videos stored in a repo).
 
 ```sh
 cd marketing/video && npm install

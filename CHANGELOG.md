@@ -6,6 +6,7 @@
 - README rewritten as a product page with renders of every wheel and editor, in light and dark.
 - A 65-second launch film (plus a 9:16 cut and a README loop), made with ElevenLabs audio and Remotion; source in
   `marketing/video/`.
+- A watch page for the film on GitHub Pages (https://mustafahalabi.github.io/clementine/), linked from the README.
 - `main` is protected: changes from contributors go through pull requests that need CI and the owner's approval.
   Added CONTRIBUTING.md, CODEOWNERS and pull request / issue templates.
 
