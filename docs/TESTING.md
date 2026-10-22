@@ -127,7 +127,7 @@ for the cap's height, keeps its natural height when there's room, and the scroll
 `sheet fit` (Cut Out on a flat picture shows "No subject found"; the sheet's buttons fit), `file actions
 wheel` (the ⌃/⇧/⌥⇧ rules including the 0.25 s ⌃ hold and the Settings switch, the slices for files and folders,
 Tab cycling the three click-mode wheels, a copied value on the job card) and `lifecycle quit` (a running encode stopped the way quitting stops it: no tool, job or partial
-output left; it runs last because it refuses tool launches afterwards): 82 checks,
+output left; it runs last because it refuses tool launches afterwards): 96 checks,
 about 35 s. The preset suites point `CLEMENTINE_SUPPORT_DIR` at a scratch folder while they run.
 
 **Writing a suite.** Add a file in `Sources/Clementine/Testing/` that extends `UITest` with
