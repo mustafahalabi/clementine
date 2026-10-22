@@ -27,6 +27,23 @@ extension UITest {
             t.scroll(by: -400, at: t.point(260, cap - 80, in: window), in: window)
             t.check(t.wait(2) { t.frame(id: "settings.toolsFooter", in: window).map { $0.rect.minY >= 0 } ?? false },
                     "…down to the tools footer")
+
+            // A capped window still follows the tab: Wheel is shorter, so the window shrinks to it and grows back.
+            let roomyCap: CGFloat = 900 // under General's natural height, over Wheel's
+            let sized = FocusablePanel()
+            sized.host(SettingsView(fit: SettingsFit(maxHeight: roomyCap), onTabChange: { SettingsWindow.refit(sized) }))
+            t.adopt(sized)
+            let general = sized.frame.height
+            let titleBar = general - roomyCap // the hosting view adds the title bar on top of the content
+            let wheel = FirstMouseHostingView(rootView: SettingsView(tab: .wheel)).fittingSize.height
+            t.check(wheel < roomyCap - 50, "Wheel fits under the cap (\(Int(wheel)) pt)")
+            if t.click(id: "settings.tab.Wheel", in: sized) {
+                t.check(t.wait(3) { abs(sized.frame.height - wheel - titleBar) < 1 },
+                        "switching to Wheel shrinks the window to it (\(Int(sized.frame.height)) pt, want \(Int(wheel + titleBar)))")
+            }
+            if t.click(id: "settings.tab.General", in: sized) {
+                t.check(t.wait(3) { abs(sized.frame.height - general) < 1 }, "switching back restores General's height")
+            }
         },
         Suite(name: "sheet fit") { t in
             // A flat picture has no subject: the preview says so instead of spinning forever.

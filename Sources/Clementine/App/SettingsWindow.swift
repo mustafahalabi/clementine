@@ -9,18 +9,36 @@ enum SettingsWindow {
     private static let fit = SettingsFit()
 
     static func show() {
-        // Cap the content to the screen first, so the window is sized by it before center() places it.
-        fit.limit(to: window?.screen ?? NSScreen.main)
-        if window == nil {
+        if let window {
+            fit.limit(to: window)
+            refit(window)
+        } else {
             let window = FocusablePanel()
             window.title = "Clementine Settings" // hidden, but used by Mission Control and VoiceOver
-            window.host(SettingsView(fit: fit))
+            // Cap the content to the screen first, so the window is sized by it before center() places it.
+            fit.limit(to: window)
+            window.host(SettingsView(fit: fit, onTabChange: { [weak window] in if let window { refit(window) } }))
             window.center()
             window.delegate = anchor
             self.window = window
         }
         if let window { TopAnchor.keepOnScreen(window) }
         window?.present()
+    }
+
+    /// With a height cap the window only has to stay between the content's min and max, so it doesn't shrink to a
+    /// shorter tab by itself; size it to the new tab's height once SwiftUI has laid it out.
+    static func refit(_ window: NSWindow) {
+        DispatchQueue.main.async { [weak window] in
+            guard let window, let hosting = window.contentView else { return }
+            hosting.layoutSubtreeIfNeeded()
+            let size = hosting.fittingSize
+            if abs(size.height - hosting.frame.height) > 0.5 { window.setContentSize(size) }
+        }
+    }
+
+    static func titleBar(_ window: NSWindow) -> CGFloat {
+        window.frame.height - window.contentLayoutRect.height
     }
 }
 
@@ -34,10 +52,11 @@ final class SettingsFit: ObservableObject {
         self.maxHeight = maxHeight
     }
 
-    func limit(to screen: NSScreen?) {
-        guard let screen else { return }
-        let chrome = NSWindow.frameRect(forContentRect: .zero, styleMask: [.titled, .fullSizeContentView]).height
-        let height = (screen.visibleFrame.height - max(chrome, 28)).rounded(.down)
+    /// The title bar is measured on the real window: it's 28 pt on older macOS and 32 pt on macOS 26, and the
+    /// hosting view adds it on top of the content.
+    func limit(to window: NSWindow) {
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        let height = (screen.visibleFrame.height - max(SettingsWindow.titleBar(window), 28)).rounded(.down)
         if maxHeight != height { maxHeight = height }
     }
 }
@@ -131,10 +150,12 @@ struct SettingsView: View {
     @AppStorage(Prefs.hardwareEncodingKey) private var hardwareEncoding = true
     @State private var launchAtLogin = LaunchAtLogin.isOn
     @State private var loginError: String?
+    private let onTabChange: () -> Void
 
-    init(tab: SettingsTab = .general, fit: SettingsFit? = nil) {
+    init(tab: SettingsTab = .general, fit: SettingsFit? = nil, onTabChange: @escaping () -> Void = {}) {
         _tab = State(initialValue: tab)
         self.fit = fit ?? SettingsFit()
+        self.onTabChange = onTabChange
     }
 
     var body: some View {
@@ -155,6 +176,7 @@ struct SettingsView: View {
         }
         .frame(width: 520)
         .frame(maxHeight: fit.maxHeight)
+        .onChange(of: tab) { onTabChange() }
         .background(WindowBackdrop())
         .tint(Theme.tangerine)
     }
@@ -261,6 +283,7 @@ private struct SettingsTabs: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? .isSelected : [])
+                .uiTestID("settings.tab.\(tab.rawValue)")
             }
         }
         .padding(3)

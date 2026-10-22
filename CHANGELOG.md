@@ -49,11 +49,12 @@ New tools, a third wheel, Shortcuts, and better results on everyday phone video.
 - Results are written under a hidden temporary name in the same folder and get their real name only when complete,
   so a crash or force quit can't leave a half-written file that looks finished. Nothing is ever replaced; leftovers
   from a crash are removed at the next launch, only in folders Clementine recorded itself.
-- Polish from driving 0.2.0 on a real Mac: Settings fits a 1080p screen (it's capped to the screen and the form
-  scrolls); renaming a preset in Settings and pressing Tab no longer shows the old name again; AirDrop says "AirDrop
-  closed" instead of "Sent with AirDrop", since macOS reports Cancel in its picker as a finished share; Cut Out's
-  preview says "No subject found" instead of spinning; the settings sheet's buttons are no longer cut off; suggested
-  preset names are short enough for a slice ("0.05 MB" rather than "Target Size · 0.05 MB").
+- Polish from driving 0.2.0 on a real Mac: Settings fits a 1080p screen and resizes to each tab (it's capped to the
+  screen and the form scrolls); renaming a preset in Settings and pressing Tab no longer shows the old name again;
+  AirDrop says "AirDrop closed" instead of "Sent with AirDrop", since macOS reports Cancel in its picker as a
+  finished share; Cut Out's preview says "No subject found" instead of spinning; the settings sheet's buttons are
+  no longer cut off; suggested preset names are short enough for a slice ("0.05 MB" rather than
+  "Target Size · 0.05 MB").
 - Updates found by an automatic check no longer pop up behind other apps: the menu bar icon shows a dot, the menu
   gets an "Update Available: Clementine x — Install…" item, and a quiet notification goes to Notification Center.
 
