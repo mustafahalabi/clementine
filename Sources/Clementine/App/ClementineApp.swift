@@ -22,8 +22,10 @@ struct ClementineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra("Clementine", systemImage: "camera.aperture") {
+        MenuBarExtra {
             MenuContent()
+        } label: {
+            MenuBarIcon()
         }
     }
 }
@@ -58,8 +60,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 private struct MenuContent: View {
     @AppStorage(Prefs.enabledKey) private var enabled = true
+    @ObservedObject private var reminder = UpdateReminder.shared
 
     var body: some View {
+        if let version = reminder.availableVersion {
+            Button("Update Available: Clementine \(version) — Install…") { Updater.shared.showPendingUpdate() }
+            Divider()
+        }
         Toggle("Wheel Enabled", isOn: $enabled)
         Divider()
         Text("Hold ⇧ while dragging to convert")
