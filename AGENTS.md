@@ -8,7 +8,7 @@ file, so keep everything here.
 A macOS menu bar app, modelled on "Tangerine": hold **⇧** while dragging a file and a wheel of output formats
 appears under the pointer; **⌥⇧** shows tools for that kind of file. Drop on a slice and the result is written
 next to the original. Everything runs locally. Owner: Mustafa Halabi (GitHub `mustafahalabi`). Public repo:
-https://github.com/mustafahalabi/clementine. Latest release: **v0.1.1** (2026-10-22), signed and notarized; 0.1.0 installs update to it through Sparkle (verified, delta update).
+https://github.com/mustafahalabi/clementine. Latest release: **v0.1.1** (2026-10-22), signed and notarized; 0.1.0 installs update to it through Sparkle (verified, delta update). When releasing, fix the old appcast URLs (RELEASING.md step 3).
 
 | Doc | Read it for |
 | --- | --- |
@@ -56,9 +56,6 @@ Known issues and loose ends (none block use):
   created. (Also listed in README › Known limits.)
 - Sparkle logs that a background (menu bar) app should implement "gentle reminders" for update alerts; not done
   yet, so with automatic updates off an update alert can appear behind other apps.
-- Seen once while driving 0.1.1 with synthetic input (not reproduced with a real mouse): after a ⌥⇧ drag dropped on
-  the hub, the Tools wheel stayed on screen and Finder stayed mid-drag. Wheel hide logic is unchanged since 0.1.0;
-  check with a real mouse.
 - Few app controls carry `.uiTestID` tags yet, so `make ui-test` mostly covers the harness and the midline
   regression. Tag controls as you write suites for them.
 
