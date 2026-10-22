@@ -2,6 +2,14 @@
 
 ## 0.2.0 — unreleased
 
+- **Remove Background and Shortcuts**
+  - New **Cut Out Subject** tool for images (⌥⇧): removes the background and keeps the person, pet or object on
+    transparency, on-device with Apple's Vision. Saves PNG, HEIC or WebP, optionally cropped to the subject, with a
+    live preview; says "No subject found" instead of guessing. CLI: `tool.image.removebg`.
+  - The wheel holds up to 13 slices (was 12), so a single image still shows Remove Metadata.
+  - Clementine's actions are in the **Shortcuts** app: *Convert with Clementine* (any action, picked from a list
+    that fits the files, with optional `key=value` settings), *Remove Background with Clementine* and *Convert
+    Images with Clementine*. They return the new files and run without opening Clementine's windows.
 - **fix/atomic-outputs**
   - Results are written under a hidden temporary name in the same folder and get their real name only when
     they're complete, so a crash or force quit can't leave a half-written file that looks finished. If the name
