@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+**Project**
+- README rewritten as a product page with renders of every wheel and editor, in light and dark.
+- A 65-second launch film (plus a 9:16 cut and a README loop), made with ElevenLabs audio and Remotion; source in
+  `marketing/video/`.
+- `main` is protected: changes from contributors go through pull requests that need CI and the owner's approval.
+  Added CONTRIBUTING.md, CODEOWNERS and pull request / issue templates.
+
 ## 0.1.0 — 2026-10-22
 
 First public release, Developer ID–signed and notarized. Apple silicon, macOS 14 or later.
