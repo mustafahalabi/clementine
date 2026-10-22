@@ -41,6 +41,10 @@ Everything planned for v0.1.0 is built, merged to `main`, tested and released: c
 click-mode wheel and Services, history/undo, wheel customization, parallel batches, welcome tour, bundled tools,
 Sparkle updates, CI. Every feature was also driven live on the build Mac with real mouse and keyboard input.
 
+0.2.0 (on `main`, not yet released): Cut Out Subject, presets, the ⌃ file actions wheel, Shortcuts actions, GIF
+options, HDR tone-mapping, VideoToolbox, portrait Join, streaming Images → PDF / PDF → images, Compress keeps
+smaller originals, atomic outputs, Sparkle gentle reminders. See CHANGELOG.md.
+
 Known issues and loose ends (none block use):
 
 - The CLI enforces choices and slider ranges but not typed-number ranges; engines report those (e.g. Split's

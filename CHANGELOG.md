@@ -2,62 +2,59 @@
 
 ## 0.2.0 — unreleased
 
-- **Video** (`feat/video`)
-  - HDR video (iPhone HLG, HDR10/PQ) converted to H.264, WebM, GIF, PNG snapshots, Compress or Target Size is
-    tone-mapped to SDR and tagged BT.709, instead of playing washed out. Trim, Speed, Rotate and Join keep HDR as
-    10-bit HEVC in MP4/MOV.
-  - H.264/HEVC encode on the media engine (VideoToolbox) for Convert, Trim, Speed, Rotate and Join: a 5 s 4K clip
-    converts in 2.9 s instead of 8.2 s, using 2.7 s of CPU instead of 49 s, at the same VMAF. Falls back to
-    software by itself; Settings › **Use hardware encoding for video** turns it off and the CLI has `--software`.
-  - Join honours phone rotation and makes a portrait video from portrait clips, and keeps the clips' frame rate
-    instead of forcing 30 fps.
-  - New **GIF** tool: frame rate, width (or original) and an optional "under N MB" target. GIFs use 15 fps, a
-    motion-weighted palette and better dithering.
-  - Trim, Speed and Rotate on TS, FLV and 3GP write H.264 + AAC, and MPG high-quality MPEG-2, instead of ffmpeg's
-    200 kb/s defaults (3GP used to fail). Trimming a TS file no longer loses its video.
-- **Remove Background and Shortcuts**
-  - New **Cut Out Subject** tool for images (⌥⇧): removes the background and keeps the person, pet or object on
-    transparency, on-device with Apple's Vision. Saves PNG, HEIC or WebP, optionally cropped to the subject, with a
-    live preview; says "No subject found" instead of guessing. CLI: `tool.image.removebg`.
-  - The wheel holds up to 13 slices (was 12), so a single image still shows Remove Metadata.
-  - Clementine's actions are in the **Shortcuts** app: *Convert with Clementine* (any action, picked from a list
-    that fits the files, with optional `key=value` settings), *Remove Background with Clementine* and *Convert
-    Images with Clementine*. They return the new files and run without opening Clementine's windows.
-- **fix/atomic-outputs**
-  - Results are written under a hidden temporary name in the same folder and get their real name only when
-    they're complete, so a crash or force quit can't leave a half-written file that looks finished. If the name
-    was taken in the meantime, the next free one is used; nothing is ever replaced.
-  - Temporaries left by a crash are deleted at the next launch, only in folders Clementine recorded itself.
-  - Updates found by an automatic check no longer pop up behind other apps: the menu bar icon shows a dot, the
-    menu gets an "Update Available: Clementine x — Install…" item, and a quiet notification goes to Notification Center.
-    Choosing either brings the update window to the front.
-- **fix/memory-compress**
-  - Make PDF (Images → PDF) writes one page at a time: memory stays flat (100 × 12 MP photos: 8 MB peak, was
-    ~7 GB), upright JPEGs go in without re-encoding, and a failure leaves no partial PDF.
-  - Make PDF and Image → PDF size pages for paper (the image's dpi, at most A4's long edge) instead of one point per
-    pixel (a 12 MP photo was a 56 × 42 in page). Transparency is kept.
-  - PDF → PNG/JPG releases each page as it goes (200 pages: 56 MB peak, was 2.5 GB).
-  - Parallel batches share a memory budget, so very large images run fewer at a time.
-  - Compress never hands back a bigger file: if the result isn't smaller, it's deleted and the original kept. The
-    card says "Already as small as it gets — kept the original."; the CLI prints `kept: <file>: …` on stderr and
-    exits 0.
-- **Presets and the ⌃ wheel** (`feat/presets-ctrl-wheel`)
-  - Presets: **Save as Preset…** in any tool's settings sheet keeps those settings as a wheel slice of its own
-    (marked with a small bookmark, placed after its tool) that runs without asking. Rename, reorder, hide and
-    delete them in Settings › Wheel › Presets. Stored in `presets.json` in Application Support and checked on load:
-    invalid ones are skipped with a reason. No built-in presets.
-  - A third wheel on **⌃** while dragging: Copy Path, Copy Name, SHA-256, Data URI (up to 5 MB), Open in Terminal,
-    Reveal in Finder and AirDrop. Values go to the clipboard and show on the job card; nothing is written beside
-    the file. ⌃ needs a quarter-second hold so ⌃-arrow Space switching mid-drag doesn't trigger it, and Settings ›
-    General can turn it off. Also in click mode (Tab and the chip now step through three wheels) and as a
-    "Clementine File Actions" Service.
-  - Shortcuts: *Convert with Clementine* also lists presets and the file actions; copied values come back as
-    text, Terminal/Reveal/AirDrop return nothing.
-  - CLI: `--preset <name>`, `--list-presets`, `--save-preset <name> --action <id> [--set k=v]…`,
-    `--rename-preset`, `--delete-preset`; file actions print their value (`--run file.sha256 clip.mov`);
-    `--list` shows the ⌃ wheel; `--render-wheel`/`--demo-wheel --files`.
-  - Tests: new `scripts/test-presets-files.sh` suite (61 checks, also in CI) and three UI suites (`preset sheet`,
-    `preset settings`, `file actions wheel`).
+New tools, a third wheel, Shortcuts, and better results on everyday phone video. Apple silicon, macOS 14 or later.
+
+**New**
+- **Cut Out Subject** (⌥⇧ on an image): removes the background and keeps the person, pet or object on
+  transparency, on-device with Apple's Vision. Saves PNG, HEIC or WebP, optionally cropped to the subject, with a
+  live preview; says "No subject found" instead of guessing. CLI: `tool.image.removebg`.
+- **Presets:** **Save as Preset…** in any tool's settings sheet keeps those settings as a wheel slice of its own
+  (marked with a small bookmark, placed after its tool) that runs without asking. Rename, reorder, hide and delete
+  them in Settings › Wheel › Presets. Invalid presets are skipped with a reason. CLI: `--preset`, `--list-presets`,
+  `--save-preset`, `--rename-preset`, `--delete-preset`.
+- **A third wheel on ⌃** while dragging: Copy Path, Copy Name, SHA-256, Data URI (up to 5 MB), Open in Terminal,
+  Reveal in Finder and AirDrop. Values go to the clipboard and show on the job card. ⌃ needs a quarter-second hold
+  so ⌃-arrow Space switching mid-drag doesn't trigger it; Settings › General can turn it off. Also in click mode
+  (Tab and the chip step through three wheels) and as a "Clementine File Actions" Service.
+- **Shortcuts:** *Convert with Clementine* (any action, preset or file action, picked from a list that fits the
+  files, with optional `key=value` settings), *Remove Background with Clementine* and *Convert Images with
+  Clementine*. They return the new files (copied values come back as text) and run without opening any window.
+- **GIF tool:** frame rate, width (or original) and an optional "under N MB" target. All GIFs now use 15 fps, a
+  motion-weighted palette and better dithering.
+- The wheel holds up to 13 slices (was 12); presets count toward it.
+
+**Video**
+- HDR video (iPhone HLG, HDR10/PQ) converted to H.264, WebM, GIF, PNG snapshots, Compress or Target Size is
+  tone-mapped to SDR and tagged BT.709 instead of playing washed out. Trim, Speed, Rotate and Join keep HDR as
+  10-bit HEVC in MP4/MOV.
+- Hardware encoding (VideoToolbox) for Convert, Trim, Speed, Rotate and Join: a 5 s 4K clip converts in 2.9 s
+  instead of 8.2 s, using 2.7 s of CPU instead of 49 s, at the same VMAF. Falls back to software by itself;
+  Settings › **Use hardware encoding for video** turns it off and the CLI has `--software`. Compress and Target
+  Size stay on software encoding, which makes smaller files.
+- Join honours phone rotation, makes a portrait video from portrait clips, and keeps the clips' frame rate instead
+  of forcing 30 fps.
+- Trim, Speed and Rotate on TS, FLV and 3GP write H.264 + AAC, and MPG high-quality MPEG-2, instead of ffmpeg's
+  200 kb/s defaults (3GP used to fail). Trimming a TS file no longer loses its video.
+
+**Lighter on memory**
+- Make PDF (Images → PDF) writes one page at a time: 100 × 12 MP photos peak at 8 MB, was ~7 GB. Upright JPEGs go
+  in without re-encoding, and pages are sized for paper (the image's dpi, at most A4's long edge) instead of one
+  point per pixel. Transparency is kept.
+- PDF → PNG/JPG releases each page as it goes (200 pages: 56 MB peak, was 2.5 GB).
+- Parallel batches share a memory budget, so very large images run fewer at a time.
+
+**Reliability**
+- Compress never hands back a bigger file: if the result isn't smaller, it's deleted and the original kept ("Already
+  as small as it gets — kept the original."; the CLI prints `kept: <file>: …` on stderr and exits 0).
+- Results are written under a hidden temporary name in the same folder and get their real name only when complete,
+  so a crash or force quit can't leave a half-written file that looks finished. Nothing is ever replaced; leftovers
+  from a crash are removed at the next launch, only in folders Clementine recorded itself.
+- Updates found by an automatic check no longer pop up behind other apps: the menu bar icon shows a dot, the menu
+  gets an "Update Available: Clementine x — Install…" item, and a quiet notification goes to Notification Center.
+
+**Project**
+- New test suites `test-video.sh` and `test-presets-files.sh` (both in CI), more UI suites; `make test` runs ten
+  suites.
 
 ## 0.1.1 — 2026-10-22
 
