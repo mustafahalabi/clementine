@@ -9,9 +9,8 @@ cd "$(dirname "$0")/.."
 for i in 1 2 3 4 5; do swift build -q 2>/dev/null && break; echo "build failed, retrying in 30s"; sleep 30; done
 BIN="$(swift build --show-bin-path)/Clementine"
 [[ -x "$BIN" ]] || { echo "no binary"; exit 1; }
-WORK="$(mktemp -d /tmp/clementine-stress.XXXXXX)"
-F="$WORK/fixtures"
-mkdir -p "$F"
+source scripts/test-lib.sh
+test_setup stress
 q() { ffmpeg -loglevel error -y "$@"; }
 probe() { ffprobe -v error -of csv=p=0 "$@"; }
 
@@ -172,7 +171,7 @@ expect() {
   local check=(); while [[ "$1" != "--" ]]; do check+=("$1"); shift; done; shift
   local out
   # Output paths come from stdout only: system frameworks sometimes log noise to stderr (e.g. on CI VMs).
-  local err; err="$(mktemp)"
+  local err; err="$(mktemp "$WORK/err.XXXXXX")"
   if ! out="$("$BIN" --run "$@" 2>"$err")"; then bad "$name" "$(cat "$err") $out"; rm -f "$err"; return; fi
   rm -f "$err"
   OUT="$(echo "$out" | head -1)"; ALL="$out"
@@ -408,5 +407,5 @@ expect "gzip a.txt when a.txt.gz exists keeps .txt.gz" '[[ "$OUT" == *.txt.gz ]]
 expect "extract a.txt.gz when a.txt exists → 'a 2.txt'" '[[ "$(basename "$OUT")" == "a 2.txt" ]]' -- convert.archive.extract "$F/arc/a.txt.gz"
 
 echo
-echo "Passed $pass, failed $fail. Work dir: $WORK"
+echo "Passed $pass, failed $fail."
 if (( fail > 0 )); then printf '  ✗ %s\n' "${failures[@]}"; exit 1; fi

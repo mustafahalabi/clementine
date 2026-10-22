@@ -6,9 +6,8 @@ cd "$(dirname "$0")/.."
 
 swift build -q || exit 1
 BIN="$(swift build --show-bin-path)/Clementine"
-WORK="$(mktemp -d /tmp/clementine-pdfmeta.XXXXXX)"
-F="$WORK/fixtures"
-mkdir -p "$F"
+source scripts/test-lib.sh
+test_setup pdfmeta
 q() { ffmpeg -loglevel error -y "$@"; }
 
 # Helper: PDF fixtures and a page dump ("count|rotation:first-word-of-text ...").

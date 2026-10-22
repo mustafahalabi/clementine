@@ -19,6 +19,7 @@ https://github.com/mustafahalabi/clementine. Latest release: **v0.1.0** (2026-10
 | [RELEASING.md](RELEASING.md) | Signing, notarizing, the Sparkle feed, publishing; this project's credentials setup |
 | [CHANGELOG.md](CHANGELOG.md) | What shipped in each version |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | ffmpeg (GPL v3), libwebp, Sparkle |
+| [PRIVACY.md](PRIVACY.md) | What the app stores and the network requests it makes (keep it accurate) |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How outside contributors get changes in (fork, PR, owner review) |
 | [marketing/video/README.md](marketing/video/README.md) | The launch film: ElevenLabs audio, Remotion motion graphics, how to re-render |
 
@@ -73,15 +74,16 @@ Known issues and loose ends (none block use):
 
 ```sh
 swift build                      # debug build (.build/debug/Clementine doubles as the CLI)
-make test                        # all seven headless suites (~2.5 min); scripts/<suite>.sh runs one
+make test                        # all seven headless suites (~2.5 min), summary at the end; scripts/<suite>.sh runs one
 make ui-test                     # interaction tests in off-screen windows (needs a GUI session)
 make run / make install          # build the .app and launch it / copy it to /Applications
 make tools                       # fetch the verified ffmpeg/ffprobe/cwebp/img2webp into vendor/bin
 scripts/release.sh               # signed + notarized release (env vars in RELEASING.md)
 ```
 
-Homebrew's `ffmpeg` and `webp` must be installed for tests and for app builds without `make tools`. CI
-(`.github/workflows/ci.yml`) builds and runs the smoke and edge suites on every push.
+Homebrew's `ffmpeg` and `webp` must be installed for tests (fixtures) and for app builds without `make tools`.
+After `make tools`, the suites run Clementine against the bundled tools in `vendor/bin`. CI
+(`.github/workflows/ci.yml`) runs debug and release builds and all seven suites on every push and PR.
 
 ## Conventions
 

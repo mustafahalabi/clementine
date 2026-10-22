@@ -100,12 +100,14 @@ enum ProcessRunner {
     }
 }
 
-/// Finds command-line tools: bundled `Contents/Resources/bin` first, then the Settings folder, then Homebrew.
+/// Finds command-line tools: the Settings folder first, then bundled `Contents/Resources/bin`, then Homebrew.
 enum ToolLocator {
     static func find(_ name: String) -> URL? {
         var dirs: [String] = []
-        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("bin").path { dirs.append(bundled) }
+        // A folder the user chose wins over the bundled tools, so they can run their own ffmpeg build (the GPL
+        // lets them replace it) without editing the signed app. Tools missing there still come from the bundle.
         if let custom = Prefs.toolsDirectory, !custom.isEmpty { dirs.append((custom as NSString).expandingTildeInPath) }
+        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("bin").path { dirs.append(bundled) }
         dirs += ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
         for dir in dirs {
             let candidate = URL(fileURLWithPath: dir).appendingPathComponent(name)

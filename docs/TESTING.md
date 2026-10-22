@@ -6,7 +6,7 @@ for every run. Editors and other UI are covered by an off-screen interaction har
 off-screen renders. A short manual checklist covers what only a real Mac session can confirm.
 
 ```sh
-make test       # all seven shell suites, in order (stops at the first failing suite)
+make test       # all seven shell suites (scripts/run-tests.sh): runs every suite even after a failure, then a summary
 make ui-test    # swift build + .build/debug/Clementine --ui-test
 ```
 
@@ -14,19 +14,26 @@ Requirements: Xcode toolchain, Homebrew `ffmpeg` (ffmpeg + ffprobe) and `webp` (
 fixtures), plus stock macOS tools (`sips`, `textutil`, `zip`, `tar`, `ditto`, `python3`). The suites need a debug
 build for the env-var overrides and `--render-ui`, which is what `swift build` (run by every script) produces.
 
+**Which ffmpeg is tested.** Releases bundle the pinned builds from `scripts/fetch-tools.sh` (ffmpeg 9.0.2,
+libwebp 1.6.0). After `make tools` puts them in `vendor/bin`, every suite runs Clementine against them: the shared
+setup (`scripts/test-lib.sh`) creates a scratch defaults suite (`CLEMENTINE_DEFAULTS_SUITE`) whose Settings tools
+folder is `vendor/bin`, and that folder is searched before anything else. Without `vendor/bin` the CLI finds
+Homebrew's tools. Override with `CLEMENTINE_TEST_TOOLS=<dir>` or `CLEMENTINE_TEST_TOOLS=system`. Each suite prints
+which it uses (`Clementine uses tools in …`). Fixtures are always made with the `ffmpeg` on `PATH`.
+
 ## Shell suites (`scripts/`)
 
 | Suite | Covers | Cases | Runtime* |
 |---|---|---|---|
-| `smoke-test.sh` | Every action at least once, mostly with defaults: all convert targets (image, media, document, PDF, subtitle, archive), every tool on images, video/audio and PDF. Passes if the run exits 0. | 93 | ~12 s |
-| `edge-test.sh` | Odd names (quotes, unicode, leading dash, spaces), portrait/odd-sized/rotated video, cover-art MP3s, EXIF orientation + GPS, gray/CMYK/16-bit images, multi-page PDFs and page specs, HTML/RTF/DOC/MD/Latin-1 documents, VTT/CRLF subtitles, archive naming and staging, broken input. Asserts on the result. | 87 | ~11 s |
+| `smoke-test.sh` | Every action at least once, mostly with defaults: all convert targets (image, media, document, PDF, subtitle, archive), every tool on images, video/audio and PDF. Passes if the run exits 0 and every output path it prints exists and isn't empty (text results must have a body). | 94 | ~12 s |
+| `edge-test.sh` | Odd names (quotes, unicode, leading dash, spaces), portrait/odd-sized/rotated video, cover-art MP3s, EXIF orientation + GPS, gray/CMYK/16-bit images, multi-page PDFs and page specs, HTML/RTF/DOC/MD/Latin-1 documents, VTT/CRLF subtitles, archive naming, repacking (incl. `convert.archive.gzip`) and staging, broken input. Asserts on the result. | 89 | ~11 s |
 | `stress-test.sh` | Adversarial: timecode/location MOVs, subtitles and two audio tracks in containers, 0.1 s video, audio-only `.mp4`, 0-byte files (and nothing left behind on failure), 12000×8000 and 1×1 images, alpha, Display P3, animations, collage geometry, rotated/cropped/locked PDFs, uppercase/missing extensions, dotted folder names, archive edge cases, odd trim/split/bleep values, `--list` contents. | 162 | ~25 s |
 | `test-image-editor.sh` | The Crop/Redact/Annotate engines driven by editor JSON: geometry, rotation, clipping, pixel checks inside/outside boxes, `auto` redaction, each annotation kind, format and animation preservation, error messages, wheel contents for 1 vs 2 images. | 54 | ~6 s |
-| `test-waveform.sh` | Channels (layouts, gains, RMS levels per channel, 5.1), Bleep on audio and video (picture copied, tone inside/silence outside, codecs), Trim with editor-style ms times, and `--render-ui` of the Trim/Bleep/Channels editors in light and dark. | 32 | ~75 s (≈65 s is `--render-ui`) |
+| `test-waveform.sh` | Channels (layouts, gains, RMS levels per channel, 5.1), Bleep on audio and video (picture copied, tone inside/silence outside, codecs), Trim with editor-style ms times, and `--render-ui` of the Trim/Bleep/Channels editors in light and dark. The renders are skipped only when there's no GUI session (`launchctl managername` isn't `Aqua`, e.g. over ssh); a crash or non-zero exit fails the suite. | 32 | ~75 s (≈65 s is `--render-ui`) |
 | `test-pdf-metadata.sh` | Page specs (`3r90`, `r-90`, bare `r90`, duplicates, `1:` prefix, rotation adding up) and merge specs (`2:1-3`, cross-file numbering, error wording). Metadata writers for JPG/PNG/HEIC, MP3/M4A/Opus/FLAC/MOV and PDF: round-trips, clearing, no re-encoding, date/year/track/rating validation. | 70 | ~9 s |
 | `test-productivity.sh` | Wheel ordering from `--record`ed usage (per kind and mode, `orderByUsage` off), hidden slices, history (JSON, 50 cap, order, undo, skip-gone, clear), parallel batches (order, concurrency limits via `CLEMENTINE_TRACE_CONCURRENCY`, collision-free names, partial failure exit 1). Uses a scratch defaults suite and support dir. | 34 | ~6 s |
 
-\* Measured on an M4 Pro (12 cores), macOS 26.1, ffmpeg 8.1, warm build: 532 checks, about 2.5 minutes in total. Counts
+\* Measured on an M4 Pro (12 cores), macOS 26.1, warm build: 535 checks, about 2.5 minutes in total. Counts
 are the `N passed` line of each suite, so they change as cases are added.
 
 **Running.** Each script builds first (`swift build -q`; stress-test retries the build up to 5 times), then runs
@@ -35,17 +42,19 @@ from the repo root, so you can call it from anywhere:
 ```sh
 scripts/edge-test.sh
 scripts/smoke-test.sh tool.media      # smoke-test only: run actions whose id contains the filter
+scripts/run-tests.sh edge-test test-waveform   # several suites, with the summary
 ```
 
 Only `smoke-test.sh` takes a filter. For the others, comment out sections or copy the one `expect` line you need
 (the helpers and fixtures are at the top of each file). Every suite ends with `N passed, M failed`, lists the failures
 and exits 1 if any failed.
 
-**Fixtures.** Generated per run in `mktemp -d /tmp/clementine-<suite>.XXXXXX/fixtures`, mostly with ffmpeg `lavfi`
-sources (`testsrc`, `sine`, `anullsrc`, `anoisesrc`). Images, PDFs and EXIF/GPS/P3/alpha/locked files come from
-small Swift helpers that the script writes and compiles (`swiftc -O`) into the work dir. Those helpers also do
-the pixel/page checks (`info`, `pix`, `pdfinfo`, `pages`, …). Work dirs are not deleted, so you can inspect
-outputs after a failure (each script prints `Fixtures in …`).
+**Fixtures.** Generated per run in `/tmp/clementine-<suite>.XXXXXX/fixtures` (made by `test_setup` in
+`scripts/test-lib.sh`), mostly with ffmpeg `lavfi` sources (`testsrc`, `sine`, `anullsrc`, `anoisesrc`). Images,
+PDFs and EXIF/GPS/P3/alpha/locked files come from small Swift helpers that the script writes and compiles
+(`swiftc -O`) into the work dir. Those helpers also do the pixel/page checks (`info`, `pix`, `pdfinfo`, `pages`, …).
+A work dir is deleted when its suite passes and kept when it fails, so you can inspect the outputs (the script
+prints `Work dir kept: …`; `KEEP_WORK=1` always keeps it). Kept dirs older than two days are pruned on later runs.
 
 **Adding a case.** Edge, stress, image-editor, waveform and pdf-metadata share two helpers:
 
@@ -66,18 +75,25 @@ Other helpers: `expect_list` (stress: assert on `--list` output with `has <id>`)
 In smoke-test, add a `run <action-id> [--set k=v]… <files>` line. Edge and stress read output paths from stdout
 only, because system frameworks sometimes log to stderr on CI VMs. Do the same in new assertions.
 
-If a case needs settings or history, export `CLEMENTINE_DEFAULTS_SUITE` and `CLEMENTINE_SUPPORT_DIR` as
-`test-productivity.sh` does, and clean up the suite in a `trap`. Never `--record` against the real domain.
+If a case needs settings or history, call `test_defaults_suite` before `test_setup` (a scratch
+`CLEMENTINE_DEFAULTS_SUITE`, deleted on exit) and export `CLEMENTINE_SUPPORT_DIR` as `test-productivity.sh` does.
+Never `--record` against the real domain.
 
 ## CI (`.github/workflows/ci.yml`)
 
 Runs on pushes to `main`, pull requests and manual dispatch, on `macos-latest` with a 40-minute timeout (one run
-per ref; newer pushes cancel older runs). Steps: print toolchain, cache SwiftPM, `brew install ffmpeg webp`,
-`swift build`, **`smoke-test.sh`**, **`edge-test.sh`**, then `scripts/bundle.sh debug` and run the bundled binary's
-`--help` to prove Sparkle embeds and links.
+per ref; newer pushes cancel older runs). The job is called `test`, which is the required check on `main`.
 
-CI does **not** run stress, image-editor, waveform, pdf-metadata, productivity or `--ui-test` (the UI harness
-needs a logged-in GUI session). Run `make test` and `make ui-test` locally before merging changes in those areas.
+1. Print the toolchain; restore `.build` (keyed on the Swift version, `Package.resolved` and the sources, falling
+   back to the newest build for the same toolchain and packages) and `vendor/bin` (keyed on
+   `scripts/fetch-tools.sh`).
+2. `make tools` on a cache miss, `brew install ffmpeg webp` (fixtures), `swift build`, `swift build -c release`.
+3. All seven suites, each its own step. They run even if an earlier suite failed, so the run shows every
+   suite's result; any failure fails the job. Clementine uses the bundled tools from `vendor/bin`.
+4. `scripts/bundle.sh debug`: the bundled binary's `--help` (Sparkle embeds and links), the tools are in
+   `Contents/Resources/bin`, and a Settings tools folder is searched before them.
+5. `make ui-test` with `continue-on-error`: an experiment to see whether the off-screen harness runs on GitHub's
+   runners. It never fails the job; check its log.
 
 ## UI tests (`--ui-test`)
 

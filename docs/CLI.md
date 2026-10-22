@@ -14,9 +14,11 @@ When the first argument is one of `--list --run --history --undo --clear-history
 binary runs headlessly (no Dock icon, no menu-bar item) and exits. With anything else, or no arguments, it
 launches the app. Debug builds check `--render-ui` and `--ui-test` before that (see [Debug-only modes](#debug-only-modes)).
 
-Engines find ffmpeg/ffprobe/cwebp in the bundle's `Contents/Resources/bin`, then the Settings tools folder,
+Engines find ffmpeg/ffprobe/cwebp in the Settings tools folder, then the bundle's `Contents/Resources/bin`,
 then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin`. A plain `swift build` binary has no bundled
-tools, so it needs Homebrew's `ffmpeg` (and `webp` for animated WebP).
+tools, so it needs Homebrew's `ffmpeg` (and `webp` for animated WebP), or a tools folder: in a debug build,
+`defaults write <suite> toolsDirectory -string "$PWD/vendor/bin"` with `CLEMENTINE_DEFAULTS_SUITE=<suite>`
+(what the test suites do).
 
 ## Modes
 

@@ -80,7 +80,13 @@ installs can never be updated again**; if it leaks, anyone can ship them an upda
 
    - `Clementine-<version>.zip` (stapled app, used by Sparkle)
    - `Clementine-<version>.dmg` (signed, notarized, stapled; drag-to-Applications layout)
-   - `Clementine-<version>.sha256`
+   - `Clementine-<version>.sha256` (SHA-256 of the zip and the DMG; attach it to the release)
+
+   The DMG window is laid out (app on the left, an Applications link on the right, the notices below) with
+   `create-dmg` (`brew install create-dmg`, installed on the Mac mini). Its Finder AppleScript needs a GUI session;
+   the first run asks to let your terminal control Finder. Without `create-dmg`, if it fails, or with
+   `DMG_LAYOUT=0`, the script falls back to a plain DMG with the same contents and an Applications link. There's no
+   background image yet.
 
    Without `CODESIGN_IDENTITY` the script still runs end to end but ad-hoc signs, skips notarization and names
    everything `-unsigned`. Those builds are for local testing only.
@@ -109,14 +115,23 @@ installs can never be updated again**; if it leaks, anyone can ship them an upda
 
    `release.sh` does this for you if you set `SPARKLE_KEY_FILE` to an exported private key file.
 
-4. **Publish a GitHub release** tagged `v0.2.0`, attaching the `.dmg`, the `.zip` and `appcast.xml` (plus any
-   `.delta` files):
+4. **Publish a GitHub release** tagged `v0.2.0`, attaching the `.dmg`, the `.zip`, the `.sha256` and
+   `appcast.xml` (plus any `.delta` files):
 
    ```sh
    git tag v0.2.0 && git push origin v0.2.0
-   gh release create v0.2.0 dist/Clementine-0.2.0.dmg dist/Clementine-0.2.0.zip \
+   gh release create v0.2.0 dist/Clementine-0.2.0.dmg dist/Clementine-0.2.0.zip dist/Clementine-0.2.0.sha256 \
      ~/clementine-updates/appcast.xml --title "Clementine 0.2.0" --notes-file notes.md
    ```
+
+   To add the checksums to a release that's already published (v0.1.0 shipped without them):
+
+   ```sh
+   gh release upload v0.1.0 dist/Clementine-0.1.0.sha256
+   ```
+
+   People can then check a download with `shasum -a 256 -c Clementine-0.2.0.sha256` in the folder holding it
+   (`--ignore-missing` if they downloaded only one of the two files).
 
    The app's feed is `https://github.com/mustafahalabi/clementine/releases/latest/download/appcast.xml`, which
    always resolves to the newest release's `appcast.xml`. Because of that, **every release must attach a full
@@ -145,5 +160,8 @@ installs can never be updated again**; if it leaks, anyone can ship them an upda
 - **Bumping tool versions.** Edit the pinned versions, build paths and SHA-256 hashes at the top of
   `scripts/fetch-tools.sh` (`FFMPEG_CHANNEL=latest` fetches the newest FFmpeg to get the new hashes), then update
   `THIRD_PARTY_NOTICES.md`.
-- **CI** (`.github/workflows/ci.yml`) builds and runs the smoke and edge tests on every push and PR. Releases are
-  built locally because they need your signing identity.
+- **CI** (`.github/workflows/ci.yml`) runs a debug and a release build and all seven headless suites against the
+  tools releases bundle (`make tools`) on every push and PR; see docs/TESTING.md. Releases are built locally
+  because they need your signing identity.
+- **Privacy.** `PRIVACY.md` describes every network request the app makes. If a change adds one (or touches
+  `SUFeedURL` or Sparkle's settings in `Info.plist`), update it.
