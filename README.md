@@ -302,7 +302,8 @@ login, set JPEG/HEIC quality, and point Clementine at an extra folder of command
 - **No setup, no extra downloads.** ffmpeg and the WebP tools are built in.
 - **No special permissions.** Clementine notices drags by watching for mouse-downs and the system drag pasteboard,
   which doesn't need Accessibility access.
-- **Updates** come through Sparkle: menu bar › **Check for Updates…**.
+- **Updates** come through Sparkle: menu bar › **Check for Updates…**. When an automatic check finds one, the
+  menu bar icon gets a dot and the menu an **Update Available: Clementine x — Install…** item (plus a quiet notification).
 - **Launch at login** is a switch on the last page of the welcome tour and in Settings.
 
 </details>
