@@ -46,6 +46,39 @@ struct LoadedImage {
     /// Source metadata with orientation reset, since pixels are already upright.
     let properties: [CFString: Any]
     let format: ImageFormat?
+
+    /// `properties` without what identifies where, by whom or with which camera a photo was taken: GPS, maker
+    /// notes, serial numbers, owner name, user comment, IPTC location and Photoshop resources (which can carry a
+    /// full-size thumbnail of the unredacted image). Orientation, color and capture settings stay.
+    var shareableProperties: [CFString: Any] {
+        var kept = properties
+        for key in [kCGImagePropertyGPSDictionary, kCGImagePropertyExifAuxDictionary, kCGImageProperty8BIMDictionary,
+                    kCGImagePropertyMakerAppleDictionary, kCGImagePropertyMakerCanonDictionary,
+                    kCGImagePropertyMakerNikonDictionary, kCGImagePropertyMakerMinoltaDictionary,
+                    kCGImagePropertyMakerFujiDictionary, kCGImagePropertyMakerOlympusDictionary,
+                    kCGImagePropertyMakerPentaxDictionary] {
+            kept.removeValue(forKey: key)
+        }
+        if var exif = kept[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            for key in [kCGImagePropertyExifUserComment, kCGImagePropertyExifMakerNote, kCGImagePropertyExifCameraOwnerName,
+                        kCGImagePropertyExifBodySerialNumber, kCGImagePropertyExifLensSerialNumber,
+                        kCGImagePropertyExifImageUniqueID, kCGImagePropertyExifSubjectLocation,
+                        kCGImagePropertyExifSubjectArea] {
+                exif.removeValue(forKey: key)
+            }
+            kept[kCGImagePropertyExifDictionary] = exif
+        }
+        if var iptc = kept[kCGImagePropertyIPTCDictionary] as? [CFString: Any] {
+            for key in [kCGImagePropertyIPTCCity, kCGImagePropertyIPTCSubLocation, kCGImagePropertyIPTCProvinceState,
+                        kCGImagePropertyIPTCCountryPrimaryLocationCode, kCGImagePropertyIPTCCountryPrimaryLocationName,
+                        kCGImagePropertyIPTCContentLocationCode, kCGImagePropertyIPTCContentLocationName,
+                        kCGImagePropertyIPTCCreatorContactInfo] {
+                iptc.removeValue(forKey: key)
+            }
+            kept[kCGImagePropertyIPTCDictionary] = iptc
+        }
+        return kept
+    }
 }
 
 enum ImageEngine {
@@ -344,7 +377,9 @@ enum ImageEngine {
 
     /// Saves an edited image. Pass `frames` (the same edit) to keep an animated GIF/WebP animated:
     /// it's applied to every frame instead of saving only the first.
+    /// `properties` replaces the source's metadata (Redact passes the privacy-safe subset).
     static func saveEdit(_ image: CGImage, from input: URL, loaded: LoadedImage, suffix: String,
+                         properties: [CFString: Any]? = nil,
                          frames edit: ((CGImage) throws -> CGImage)? = nil) async throws -> URL {
         let format = editFormat(for: loaded)
         let output = Output.file(beside: input, suffix: suffix, ext: format.ext)
@@ -357,7 +392,7 @@ enum ImageEngine {
             try await writeAnimation(animation, to: output, format: format)
             return output
         }
-        try await write(image, to: output, format: format, properties: loaded.properties)
+        try await write(image, to: output, format: format, properties: properties ?? loaded.properties)
         return output
     }
 
