@@ -170,7 +170,10 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   otherwise `execute` directly with the defaults.
 - `JobRunner.execute`: creates a `RunningJob` (observable state), shows a `ProgressPanel` card, records usage,
   then calls `BatchRunner.run` inside a `Task` stored on `job.task`. Progress callbacks hop to the main actor,
-  and progress never goes backwards. With several units the detail line reads "n of N done". When it finishes:
+  and progress never goes backwards. With several units the detail line reads "n of N done". Units that return
+  `JobOutput.unchanged(note)` (Compress whose result wasn't smaller, see `JobOutput.smaller`) wrote nothing on
+  purpose: they land in `BatchReport.notes`, the card's detail line shows the note (`JobRunner.note`, up to two
+  lines) and stays 4 s, and the CLI prints `kept: <file>: <note>` on stderr. When it finishes:
   reveal the files in Finder (`Prefs.revealInFinder`), open a `ResultWindow` for each text output, write a
   history entry, and offer Undo on the card. The card closes after 1.2 s, or 5 s if Undo is available. Hovering
   keeps it open (`ProgressPanel.close(after:)`). A failure leaves the card open with the messages; `JobView`
@@ -183,6 +186,9 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
 - `BatchRunner.limit`: `cores = max(1, activeProcessorCount / 2)`. `maxConcurrent` is capped at `cores`. Any
   video or audio in the units means `min(2, cores)` (ffmpeg is already multithreaded); everything else gets
   `cores`.
+- `MemoryBudget` (actor, `BatchRunner.swift`): shared by every batch; each unit acquires its weight (largest image's
+  pixels × 4 bytes × 3, from the header) before it starts, FIFO, capped at the budget so an oversized image runs
+  alone. Capacity is a quarter of RAM within 1–6 GB (`CLEMENTINE_MEMORY_BUDGET_MB` in debug builds).
 - `BatchRunner.run`: a `TaskGroup` with a sliding window of `limit` tasks. A private `Tally` (NSLock) tracks
   per-unit fractions → overall progress, the finished count, and the peak concurrency. Debug builds print the
   peak with `CLEMENTINE_TRACE_CONCURRENCY`. Results come back in input order in a `BatchReport`.
@@ -278,6 +284,12 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
     `Output.sweepStale()` visits only those folders and deletes items named exactly like a temporary whose pid has
     exited, or whose newest modification is over an hour old (a reused pid); everything else stays. Folders with
     nothing left are dropped from the journal. `discardInFlight` also deletes every staged item.
+- **Images → PDF** (`ImageEngine.writePDF`, `Engines/ImagePDFWriter.swift`): pages are written one at a time by a
+  small PDF writer (JPEG image XObjects, an optional Flate alpha `SMask`, ICC profiles, xref at the end), each page
+  inside an `autoreleasepool`. Upright RGB/gray JPEGs that aren't oversized are embedded byte for byte; anything
+  else is decoded with ImageIO at no more than 400 dpi for its page and re-encoded as JPEG 0.9 (alpha
+  un-premultiplied into a mask with vImage). Page size comes from the image's dpi (when it declares more than 72),
+  scaled down to fit 842 pt. **PDF → images** renders and encodes each page inside its own `autoreleasepool`.
 - Other engines: `ImageEdits` renders the editors' JSON at full resolution, in pixel coordinates of the upright
   image with a top-left origin. `MetadataEngine.write` takes a JSON object of field changes and saves an
   `(edited)` copy without re-encoding. `PDFEngine.parseSpec/spec(for:qualified:)` handles page specs such as
@@ -462,7 +474,13 @@ static array until `willClose`.
    it. Sleeping or spinning the run loop alone delivers nothing.
    `Frame.center` is nudged 0.3 pt off the exact midline, and the midline suite tests the exact center
    separately.
-9. **Smaller ones worth knowing:**
+9. **CGPDFContext and PDFKit hold every image until the document closes.** Drawing one image per page into a
+   `CGPDFContext` inside an autorelease pool still grew by about the output's size (5 MB per 12 MP JPEG,
+   25 MB per page for decoded pixels); merging single-page temp PDFs with PDFKit or `drawPDFPage` was no better.
+   Make PDF therefore writes the file itself (`ImagePDFWriter`): peak memory for 100 × 12 MP JPEGs went from
+   ~7 GB (extrapolated) to 8 MB. PDFKit's page thumbnails are autoreleased: without a pool per page, PDF → JPG of
+   200 pages peaked at 2.5 GB (56 MB with one).
+10. **Smaller ones worth knowing:**
    - `WheelController` delays the hide on `.ended` by 0.3 s because the drop arrives after mouse-up. The
      generation check stops a stale hide from closing a newer wheel.
    - `openFiles()` shows the wheel on the next runloop pass so the closing `NSOpenPanel` doesn't take key

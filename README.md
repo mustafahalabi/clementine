@@ -130,7 +130,9 @@ The wheel only shows what makes sense for the file you're holding, and the slice
 **Compress**, hit a **Target Size**, **Resize**, **Crop**, **Rotate/Flip**, and **Edit** exposure, brightness,
 contrast, saturation, highlights and shadows with a live preview. **Redact** faces and text, **Annotate** with arrows,
 shapes and text, **Add BG** (a gradient backdrop with padding, rounded corners and a shadow), **Read QR** codes, and view, edit or remove **Metadata**
-(including location). Drop two or more images to make a **Collage** or a **PDF**.
+(including location). Drop two or more images to make a **Collage** or a **PDF** (pages sized for paper, at most A4's
+long edge; hundreds of photos work, since pages are written one at a time). Compress never hands back a bigger file:
+if a file is already as small as it gets, the original is kept and the card says so.
 
 ### Video
 
@@ -268,8 +270,8 @@ two-week half-life). Settings › Wheel hides slices you never use, with a live 
 <td width="50%" valign="top">
 
 **Batches.** Drop many files at once. Clementine runs the action on each of them, several in parallel (up to half
-your cores for images and documents, two at a time for audio and video), or once on all of them for Join, Merge,
-Collage and Make PDF. Each job gets a small progress card with cancel, and finished files are revealed in Finder.
+your cores for images and documents, two at a time for audio and video, fewer for very large images so memory
+stays in check), or once on all of them for Join, Merge, Collage and Make PDF. Each job gets a small progress card with cancel, and finished files are revealed in Finder.
 
 **Switch mid-drag.** Press or release <kbd>⌥</kbd> while the wheel is open to flip between the convert and tools
 wheels.

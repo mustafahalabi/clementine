@@ -17,6 +17,10 @@ ffmpeg -loglevel error -f lavfi -i testsrc2=size=320x240:rate=25 -t 2 -c:v libx2
 ffmpeg -loglevel error -f lavfi -i "sine=frequency=330:sample_rate=44100,volume=0.5" -af "apad=pad_dur=1" -t 5 "$F/tone.wav"
 ffmpeg -loglevel error -i "$F/tone.wav" -c:a libmp3lame -q:a 4 "$F/tone.mp3"
 ffmpeg -loglevel error -f lavfi -i testsrc=size=1600x1000 -frames:v 1 "$F/photo.png"
+# Compress keeps the original when it can't shrink it (flat test patterns), so it gets noisy, photo-like inputs.
+ffmpeg -loglevel error -f lavfi -i "testsrc2=size=1600x1000,noise=alls=25:allf=t" -frames:v 1 "$F/grainy.png"
+ffmpeg -loglevel error -f lavfi -i "testsrc2=size=640x360:rate=30,noise=alls=25:allf=t" -f lavfi -i sine=frequency=440:sample_rate=48000 \
+  -t 2 -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k "$F/grainy.mp4"
 ffmpeg -loglevel error -f lavfi -i "color=c=red@0.5:size=400x300,format=rgba" -frames:v 1 "$F/alpha.png"
 ffmpeg -loglevel error -i "$F/photo.png" -q:v 2 "$F/photo.jpg"
 ffmpeg -loglevel error -f lavfi -i testsrc=size=200x150:rate=10 -t 1 "$F/anim.gif"
@@ -47,6 +51,16 @@ let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: CommandLine.argu
 CGImageDestinationAddImage(dest, cg, nil); CGImageDestinationFinalize(dest)
 SWIFT
 swift "$WORK/qr.swift" "$F/qr.png" || echo "warning: couldn't make qr.png"
+# A scan-like PDF (the PNG goes in as Flate-compressed pixels), which PDF Compress can shrink.
+cat > "$WORK/scan.swift" <<'SWIFT'
+import CoreGraphics; import ImageIO; import Foundation
+let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: CommandLine.arguments[1]) as CFURL, nil)!
+let image = CGImageSourceCreateImageAtIndex(src, 0, nil)!
+var box = CGRect(x: 0, y: 0, width: 800, height: 500)
+let pdf = CGContext(URL(fileURLWithPath: CommandLine.arguments[2]) as CFURL, mediaBox: &box, nil)!
+pdf.beginPDFPage(nil); pdf.draw(image, in: box); pdf.endPDFPage(); pdf.closePDF()
+SWIFT
+swift "$WORK/scan.swift" "$F/grainy.png" "$F/scan.pdf" || echo "warning: couldn't make scan.pdf"
 
 pass=0; fail=0; failures=()
 run() { # run <action-id> [--set k=v]... <files>
@@ -107,7 +121,7 @@ run archive.gzip "$F/notes.txt"
 run archive.gzip "$F/folder"
 
 echo "Tools: images"
-run tool.compress "$F/photo.png"
+run tool.compress "$F/grainy.png"
 run tool.compress --set level=2 "$F/photo.jpg"
 run tool.fit --set megabytes=0.05 "$F/photo.jpg"
 run tool.image.resize "$F/photo.jpg"
@@ -123,7 +137,7 @@ run tool.metadata "$F/photo.jpg"
 run tool.metadata.strip "$F/photo.jpg"
 
 echo "Tools: video & audio"
-run tool.compress "$F/clip.mp4"
+run tool.compress "$F/grainy.mp4"
 run tool.compress "$F/tone.wav"
 run tool.fit --set megabytes=0.3 "$F/clip.mp4"
 run tool.fit --set megabytes=0.05 "$F/tone.wav"
@@ -146,7 +160,7 @@ run tool.metadata "$F/clip.mp4"
 run tool.metadata.strip "$F/tone.mp3"
 
 echo "Tools: PDF"
-run tool.pdf.compress "$F/notes.pdf"
+run tool.pdf.compress "$F/scan.pdf"
 run tool.pdf.pages --set pages=1,1 "$F/notes.pdf"
 run tool.pdf.split "$F/photo.pdf"
 run tool.pdf.rotate "$F/notes.pdf"

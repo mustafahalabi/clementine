@@ -10,6 +10,16 @@
   - Updates found by an automatic check no longer pop up behind other apps: the menu bar icon shows a dot, the
     menu gets an "Update Available: Clementine x — Install…" item, and a quiet notification goes to Notification Center.
     Choosing either brings the update window to the front.
+- **fix/memory-compress**
+  - Make PDF (Images → PDF) writes one page at a time: memory stays flat (100 × 12 MP photos: 8 MB peak, was
+    ~7 GB), upright JPEGs go in without re-encoding, and a failure leaves no partial PDF.
+  - Make PDF and Image → PDF size pages for paper (the image's dpi, at most A4's long edge) instead of one point per
+    pixel (a 12 MP photo was a 56 × 42 in page). Transparency is kept.
+  - PDF → PNG/JPG releases each page as it goes (200 pages: 56 MB peak, was 2.5 GB).
+  - Parallel batches share a memory budget, so very large images run fewer at a time.
+  - Compress never hands back a bigger file: if the result isn't smaller, it's deleted and the original kept. The
+    card says "Already as small as it gets — kept the original."; the CLI prints `kept: <file>: …` on stderr and
+    exits 0.
 
 ## 0.1.1 — 2026-10-22
 

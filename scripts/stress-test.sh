@@ -9,6 +9,7 @@ cd "$(dirname "$0")/.."
 for i in 1 2 3 4 5; do swift build -q 2>/dev/null && break; echo "build failed, retrying in 30s"; sleep 30; done
 BIN="$(swift build --show-bin-path)/Clementine"
 [[ -x "$BIN" ]] || { echo "no binary"; exit 1; }
+REAL_BIN="$BIN" # test_setup swaps BIN for a stderr-filtering wrapper; memory is measured on the binary itself
 source scripts/test-lib.sh
 test_setup stress
 q() { ffmpeg -loglevel error -y "$@"; }
@@ -45,6 +46,30 @@ case "pix": // pix file x y → r g b a (top-left origin, sRGB)
     let o = Int(args[4])! * c.bytesPerRow + Int(args[3])! * 4
     let d = c.data!.assumingMemoryBound(to: UInt8.self)
     print("\(d[o]) \(d[o+1]) \(d[o+2]) \(d[o+3])")
+case "grainy": // grainy kind w h out type: random pixels (kind alpha = right half transparent, p3 = Display P3)
+    let w = Int(args[3])!, h = Int(args[4])!, kind = args[2]
+    let space = kind == "p3" ? CGColorSpace(name: CGColorSpace.displayP3)! : srgb
+    let c = ctx(w, h, space)
+    let d = c.data!.assumingMemoryBound(to: UInt8.self)
+    for y in 0..<h { for x in 0..<w {
+        let o = y * c.bytesPerRow + x * 4
+        let clear = kind == "alpha" && x >= w / 2
+        for k in 0..<3 { d[o + k] = clear ? 0 : UInt8.random(in: 0...255) }
+        d[o + 3] = clear ? 0 : 255
+    } }
+    save(c.makeImage()!, args[5], args[6])
+case "scan": // scan out: 1200×900 JPEG declaring 300 dpi (a 4 × 3 in print)
+    let c = ctx(1200, 900, srgb, .noneSkipLast)
+    c.setFillColor(.white); c.fill(CGRect(x: 0, y: 0, width: 1200, height: 900))
+    let d = CGImageDestinationCreateWithURL(url(args[2]) as CFURL, "public.jpeg" as CFString, 1, nil)!
+    CGImageDestinationAddImage(d, c.makeImage()!, [kCGImagePropertyDPIWidth: 300, kCGImagePropertyDPIHeight: 300] as CFDictionary)
+    guard CGImageDestinationFinalize(d) else { fail("finalize") }
+case "oriented": // oriented out: stored 400×200, EXIF orientation 6 (shown 200×400)
+    let c = ctx(400, 200, srgb, .noneSkipLast)
+    c.setFillColor(CGColor(srgbRed: 0.2, green: 0.4, blue: 0.8, alpha: 1)); c.fill(CGRect(x: 0, y: 0, width: 400, height: 200))
+    let d = CGImageDestinationCreateWithURL(url(args[2]) as CFURL, "public.jpeg" as CFString, 1, nil)!
+    CGImageDestinationAddImage(d, c.makeImage()!, [kCGImagePropertyOrientation: 6] as CFDictionary)
+    guard CGImageDestinationFinalize(d) else { fail("finalize") }
 case "alpha": // 200x100: left half opaque red, right half transparent
     let c = ctx(200, 100, srgb)
     c.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)); c.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
@@ -104,9 +129,10 @@ echo "Fixtures in $F"
 q -f lavfi -i testsrc=size=640x360:rate=30 -f lavfi -i sine=r=48000 -t 3 -c:v libx264 -g 30 -pix_fmt yuv420p -c:a aac \
   -timecode 01:00:00:00 -metadata location="+48.8500+002.3500/" -metadata "make=Apple" "$F/iphone.mov"
 printf '1\n00:00:00,500 --> 00:00:01,500\nHello\n\n2\n00:00:02,000 --> 00:00:02,800\nWorld\n' > "$F/s.srt"
-q -f lavfi -i testsrc=size=320x240:rate=25 -f lavfi -i sine -i "$F/s.srt" -t 3 -map 0 -map 1 -map 2 -c:v libx264 -g 25 -pix_fmt yuv420p -c:a aac -c:s srt "$F/subs.mkv"
+# Grainy, so Compress has something to shrink (it keeps the original when it can't).
+q -f lavfi -i "testsrc=size=320x240:rate=25,noise=alls=25:allf=t" -f lavfi -i sine -i "$F/s.srt" -t 3 -map 0 -map 1 -map 2 -c:v libx264 -g 25 -pix_fmt yuv420p -c:a aac -c:s srt "$F/subs.mkv"
 q -f lavfi -i testsrc=size=320x240:rate=25 -f lavfi -i sine -i "$F/s.srt" -t 3 -map 0 -map 1 -map 2 -c:v libx264 -g 25 -pix_fmt yuv420p -c:a aac -c:s mov_text "$F/subs.mp4"
-q -f lavfi -i testsrc=size=320x240:rate=25 -f lavfi -i sine=f=440 -f lavfi -i sine=f=880 -t 3 -map 0 -map 1 -map 2 -c:v libx264 -pix_fmt yuv420p -c:a aac \
+q -f lavfi -i "testsrc=size=320x240:rate=25,noise=alls=25:allf=t" -f lavfi -i sine=f=440 -f lavfi -i sine=f=880 -t 3 -map 0 -map 1 -map 2 -c:v libx264 -pix_fmt yuv420p -c:a aac \
   -metadata:s:a:0 language=eng -metadata:s:a:1 language=fra "$F/two audio.mkv"
 q -f lavfi -i testsrc=size=320x240:rate=30 -f lavfi -i sine -t 0.1 -c:v libx264 -pix_fmt yuv420p -c:a aac "$F/tiny.mp4"
 q -f lavfi -i testsrc=size=641x361:rate=24 -t 2 -c:v libx264 -pix_fmt yuv444p "$F/odd wide.mkv"
@@ -120,7 +146,7 @@ q -f lavfi -i "sine=f=500:r=44100" -t 2 -c:a libmp3lame "$F/b.mp3"
 q -f lavfi -i "sine=f=700:r=96000" -t 2 -ac 1 -c:a flac "$F/c.flac"
 q -f lavfi -i "sine=f=400:r=8000" -t 100 -ac 1 -c:a libmp3lame -b:a 32k "$F/long.mp3"
 q -f lavfi -i "sine=r=44100" -t 3 -c:a aac -b:a 96k "$F/song.m4a"
-cp "$F/b.mp3" "$F/SONG.MP3"
+q -f lavfi -i "sine=f=500:r=44100" -t 2 -c:a libmp3lame -b:a 192k "$F/SONG.MP3"
 # Images
 "$H" solid 12000 8000 "$F/huge.jpg" public.jpeg
 "$H" solid 1 1 "$F/one.png" public.png
@@ -137,6 +163,23 @@ for i in 0 1 2 3 4 5 6 7 8 9; do
   "$H" solid 1600 200 "$F/pano/p$i.jpg" public.jpeg
 done
 cp "$F/PHOTO.JPG" "$F/photo_noext"
+"$H" grainy alpha 200 100 "$F/alpha grainy.png" public.png
+"$H" grainy p3 300 200 "$F/p3 grainy.jpg" public.jpeg
+"$H" oriented "$F/oriented.jpg"
+# Already as small as it gets: Compress must keep these and write nothing.
+mkdir -p "$F/small"
+q -f lavfi -i "testsrc2=s=320x240" -frames:v 1 -q:v 31 "$F/small/tiny.jpg"
+q -f lavfi -i "color=c=red:s=64x64" -frames:v 1 "$F/small/flat.png"
+q -f lavfi -i "testsrc2=s=320x240:d=3" -f lavfi -i "sine=d=3" -c:v libx264 -crf 45 -pix_fmt yuv420p -c:a aac -b:a 24k -shortest "$F/small/low.mp4"
+q -f lavfi -i "sine=d=3" -c:a libopus -b:a 16k "$F/small/voice.opus"
+"$H" pdf-text "$F/small/text.pdf" 2
+q -f lavfi -i "testsrc2=size=640x360:rate=30,noise=alls=25:allf=t" -t 2 -c:v libx264 -crf 18 -pix_fmt yuv420p "$F/small/grainy.mp4"
+# Make PDF: big photos (page size, memory), a 300 dpi scan, and many pages for PDF → images.
+mkdir -p "$F/photos" "$F/manypages"
+"$H" solid 4000 3000 "$F/photos/p01.jpg" public.jpeg
+for i in $(seq -w 2 20); do cp "$F/photos/p01.jpg" "$F/photos/p$i.jpg"; done
+"$H" scan "$F/scan300.jpg"
+for i in $(seq -w 1 120); do cp "$F/grid/g0.jpg" "$F/manypages/m$i.jpg"; done
 # PDFs
 "$H" pdf-text "$F/three.pdf" 3
 "$H" pdf-text "$F/one page.pdf" 1
@@ -207,6 +250,22 @@ expect_error() {
   fi
   ok "$name"
 }
+# expect_kept <name> -- <action args…>: succeeds (exit 0) with no output path, says "kept: …" on stderr and leaves
+# nothing new next to the inputs (Compress whose result wasn't smaller).
+expect_kept() {
+  local name="$1"; shift 2
+  local dirs=() a; for a in "$@"; do [[ -e "$a" ]] && dirs+=("$(dirname "$a")"); done
+  local before after out err; before="$(for d in "${dirs[@]}"; do ls -A "$d"; done | sort)"
+  err="$(mktemp "$WORK/err.XXXXXX")"
+  if ! out="$("$BIN" --run "$@" 2>"$err")"; then bad "$name" "failed: $(cat "$err")"; rm -f "$err"; return; fi
+  after="$(for d in "${dirs[@]}"; do ls -A "$d"; done | sort)"
+  if [[ -n "$out" ]]; then bad "$name" "printed an output: $out"
+  elif [[ "$before" != "$after" ]]; then bad "$name" "left behind: $(comm -13 <(echo "$before") <(echo "$after") | tr '\n' ' ')"
+  elif ! grep -q "^kept: .*Already as small as it gets" "$err"; then bad "$name" "no kept note: $(cat "$err")"
+  else ok "$name"; fi
+  rm -f "$err"
+}
+mem() { /usr/bin/time -l "$@" 2>&1 >/dev/null | awk '/peak memory footprint/{print $1}'; }
 # expect_list <name> <assertion on $LIST> -- <files…>
 expect_list() {
   local name="$1"; shift
@@ -348,7 +407,7 @@ for f in jpeg heic webp avif tiff bmp gif pdf; do expect "1×1 → $f" '[[ -s "$
 expect "1×1 resize 25% stays 1×1" '[[ "$(dims "$OUT")" == "1 1" ]]' -- tool.image.resize --set size=2 "$F/one.png"
 expect "1×1 crop 16:9" '[[ -f "$OUT" ]]' -- tool.image.crop --set aspect=4 "$F/one.png"
 expect "1×1 background" '[[ -f "$OUT" ]]' -- tool.image.background "$F/one.png"
-expect "1×1 compress" '[[ -f "$OUT" ]]' -- tool.compress "$F/one.png"
+expect_kept "1×1 compress keeps the original" -- tool.compress "$F/one.png"
 expect "1×1 QR → message" '[[ "$ALL" == *"No QR"* ]]' -- tool.image.qr "$F/one.png"
 expect_error "1×1 OCR → 'No text found'" "No text found" -- convert.image.txt "$F/one.png"
 
@@ -357,7 +416,7 @@ expect "alpha png → jpg flattened white" '[[ "$(pix "$OUT" 150 50)" == "255 25
 expect "alpha png → bmp flattened white" '[[ "$(pix "$OUT" 150 50)" == "255 255 255 255" ]]' -- convert.image.bmp "$F/alpha.png"
 expect "alpha png → webp keeps alpha" '[[ "$(pix "$OUT" 150 50 | cut -d" " -f4)" == 0 ]]' -- convert.image.webp "$F/alpha.png"
 expect "alpha png → heic keeps alpha" '[[ "$(pix "$OUT" 150 50 | cut -d" " -f4)" == 0 ]]' -- convert.image.heic "$F/alpha.png"
-expect "alpha png compress → heic w/ alpha" '[[ "$OUT" == *.heic && "$(pix "$OUT" 150 50 | cut -d" " -f4)" == 0 ]]' -- tool.compress "$F/alpha.png"
+expect "alpha png compress → heic w/ alpha" '[[ "$OUT" == *.heic && "$(pix "$OUT" 150 50 | cut -d" " -f4)" == 0 ]]' -- tool.compress "$F/alpha grainy.png"
 expect "alpha png fit → keeps alpha" '[[ "$(pix "$OUT" 150 50 | cut -d" " -f4)" == 0 ]]' -- tool.fit --set megabytes=0.05 "$F/alpha.png"
 expect "alpha heic → png keeps alpha" '[[ "$(pix "$OUT" 150 50 | cut -d" " -f4)" == 0 ]]' -- convert.image.png "$F/alpha.heic"
 expect "alpha png rotate keeps alpha" '[[ "$(pix "$OUT" 50 150 | cut -d" " -f4)" == 0 || "$(pix "$OUT" 50 50 | cut -d" " -f4)" == 0 ]]' -- tool.image.rotate "$F/alpha.png"
@@ -367,7 +426,7 @@ expect "alpha png collage has white (not black) bg" '[[ "$(pix "$OUT" 900 500 | 
 echo "Wide gamut (Display P3)"
 expect "p3 png → jpg keeps P3" '[[ "$(profile "$OUT")" == *P3* ]]' -- convert.image.jpeg "$F/p3.png"
 expect "p3 png → webp keeps P3" '[[ "$(profile "$OUT")" == *P3* ]]' -- convert.image.webp "$F/p3.png"
-expect "p3 jpg compress keeps P3" '[[ "$(profile "$OUT")" == *P3* ]]' -- tool.compress "$F/p3.jpg"
+expect "p3 jpg compress keeps P3" '[[ "$(profile "$OUT")" == *P3* ]]' -- tool.compress --set level=2 "$F/p3 grainy.jpg"
 expect "p3 jpg rotate keeps P3" '[[ "$(profile "$OUT")" == *P3* ]]' -- tool.image.rotate "$F/p3.jpg"
 expect "p3 jpg resize keeps P3" '[[ "$(profile "$OUT")" == *P3* ]]' -- tool.image.resize "$F/p3.jpg"
 expect "p3 jpg edit keeps P3" '[[ "$(profile "$OUT")" == *P3* ]]' -- tool.image.adjust --set exposure=0.1 "$F/p3.jpg"
@@ -385,6 +444,40 @@ echo "Collage"
 expect "grid of 10 → 4×3 tiles" '[[ "$(dims "$OUT")" == "4120 3096" ]]' -- tool.image.collage "$F"/grid/g*.jpg
 expect "row of 10 panoramas" '[[ -f "$OUT" ]]' -- tool.image.collage --set layout=1 "$F"/pano/p*.jpg
 expect "column with 12000×8000" '[[ -f "$OUT" ]]' -- tool.image.collage --set layout=2 "$F/huge.jpg" "$F/PHOTO.JPG"
+
+echo "Compress never makes a file bigger"
+expect_kept "low-quality jpg kept" -- tool.compress --set level=0 "$F/small/tiny.jpg"
+expect_kept "flat png kept" -- tool.compress "$F/small/flat.png"
+expect_kept "low-bitrate mp4 kept" -- tool.compress --set level=0 "$F/small/low.mp4"
+expect_kept "16 kbps opus → m4a kept" -- tool.compress "$F/small/voice.opus"
+expect_kept "text pdf kept" -- tool.pdf.compress "$F/small/text.pdf"
+OUT="$("$BIN" --run tool.compress "$F/small/flat.png" "$F/small/grainy.mp4" 2>"$WORK/kept.txt")"; STATUS=$?
+if [[ $STATUS -eq 0 && $(echo "$OUT" | wc -l) -eq 1 && "$OUT" == *"grainy (compressed).mp4" && -s "$OUT" ]] \
+   && grep -q "^kept: flat.png: " "$WORK/kept.txt" && (( $(size "$OUT") < $(size "$F/small/grainy.mp4") )); then
+  ok "batch: kept file noted, the other compressed, exit 0"
+else bad "batch: kept file noted, the other compressed, exit 0" "status $STATUS, out: $OUT, err: $(cat "$WORK/kept.txt")"; fi
+rm -f "$OUT"
+
+echo "Make PDF"
+expect "12 MP photos → A4-sized pages" '[[ "$(pdfi "$OUT" | cut -d" " -f1,5)" == "20 842x631" ]]' -- tool.image.pdf "$F"/photos/p*.jpg
+expect "…JPEGs embedded byte for byte" 'python3 -c "import sys; sys.exit(open(sys.argv[1], \"rb\").read().find(open(sys.argv[2], \"rb\").read()) < 0)" "$OUT" "$F/photos/p01.jpg"' -- tool.image.pdf "$F/photos/p01.jpg" "$F/one.png"
+expect "300 dpi scan keeps its print size" '[[ "$(pdfi "$OUT" | cut -d" " -f5)" == "288x216" ]]' -- tool.image.pdf "$F/scan300.jpg" "$F/one.png"
+expect "EXIF-rotated photo → portrait page" '[[ "$(pdfi "$OUT" | cut -d" " -f5)" == "200x400" ]]' -- tool.image.pdf "$F/oriented.jpg" "$F/one.png"
+expect "alpha png page keeps a transparency mask" 'grep -aq "/SMask" "$OUT"' -- tool.image.pdf "$F/alpha.png" "$F/one.png"
+expect "mixed formats → PDF → PNG renders every page" '[[ "$(pdfi "$OUT" | cut -d" " -f1)" == 6 ]] && P="$("$BIN" --run convert.pdf.png "$OUT" 2>/dev/null)" && [[ $(ls "$P" | wc -l) -eq 6 ]]' \
+  -- tool.image.pdf "$F/oriented.jpg" "$F/alpha.heic" "$F/p3.png" "$F/anim.gif" "$F/PHOTO.JPG" "$F/huge.jpg"
+expect "single image → pdf uses the same page size" '[[ "$(pdfi "$OUT" | cut -d" " -f5)" == "842x631" ]]' -- convert.image.pdf "$F/photos/p02.jpg"
+expect_error "unreadable image midway leaves no PDF" "empty.jpg" -- tool.image.pdf "$F/grid/g0.jpg" "$F/zero/empty.jpg" "$F/grid/g1.jpg"
+PEAK=$(mem "$REAL_BIN" --run tool.image.pdf "$F"/photos/p*.jpg)
+# Holding every decoded photo took ~68 MB each (1.4 GB here); streaming stays flat.
+if [[ -n "$PEAK" ]] && (( PEAK < 300000000 )); then ok "20 × 12 MP → PDF peaks under 300 MB ($((PEAK / 1000000)) MB)"
+else bad "20 × 12 MP → PDF peaks under 300 MB" "peak $PEAK"; fi
+OUT="$("$BIN" --run tool.image.pdf "$F"/manypages/m*.jpg 2>/dev/null)"
+PEAK=$(mem "$REAL_BIN" --run convert.pdf.jpeg "$OUT")
+# Without a pool per page every rendered page stayed in memory (~5 MB each here).
+if [[ -n "$PEAK" ]] && (( PEAK < 250000000 )) && [[ $(ls "${OUT%.pdf} pages" | wc -l) -eq 120 ]]; then
+  ok "120-page PDF → JPG peaks under 250 MB ($((PEAK / 1000000)) MB)"
+else bad "120-page PDF → JPG peaks under 250 MB" "peak $PEAK"; fi
 
 echo "PDF"
 expect "rotated page → png is landscape" '[[ "$(dims "$OUT")" == "1584 1224" ]]' -- convert.pdf.png "$F/rotated.pdf"
