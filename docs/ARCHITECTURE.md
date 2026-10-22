@@ -265,12 +265,14 @@ could end up visible but not receiving keystrokes. A non-activating panel that c
   scheme-aware `surface`, `hairline` and `secondaryText`. Motion: `Theme.spring`, `.snappy`, `.ease`. Views
   should take colors and animations from here.
 - Contrast: anything with white text on it (buttons, chips, selected tabs, hovered slices) fills with
-  `Theme.accent`, whose stops `accentTop`/`accentBottom` are a deeper peel (#BE4A0C → #B23C10, ≥ 5:1 against
-  white) than the bright `tangerine`/`blood`, which stay for glows, washes and rings. Accent-coloured text and
-  glyphs on the app's surfaces use `Theme.accentText` (deep orange in light mode, bright in dark). These are
-  `Theme.Shade`s: dynamic colors that switch to darker values (≥ 7:1) with Increase Contrast, read from the
-  appearance and `NSWorkspace.accessibilityDisplayShouldIncreaseContrast` (or `CLEMENTINE_INCREASE_CONTRAST=1`
-  in debug builds, for renders). `AccentButtonStyle`'s sheen is kept faint and is off with Increase Contrast.
+  `Theme.accent`, whose stops `accentTop`/`accentBottom` are the fruit a shade deeper (#EE6C14 → #E0501C):
+  ≥ 3.0:1 against white at the lightest point, the large/bold-text threshold, so every label on them is bold.
+  Regular-weight small text on orange uses `Theme.accentDeep` (#BE4A0C, 5.0:1). The bright `tangerine`/`blood`
+  stay for glows, washes, rings and progress bars (`accentVivid`). Accent glyphs and bold accent labels on the
+  app's surfaces use `Theme.accentText` (orange in light mode, bright in dark). These are `Theme.Shade`s: dynamic
+  colors that switch to a deep peel (≥ 7:1) only with Increase Contrast, read from the appearance and
+  `NSWorkspace.accessibilityDisplayShouldIncreaseContrast` (or `CLEMENTINE_INCREASE_CONTRAST=1` in debug builds,
+  for renders). `AccentButtonStyle`'s sheen is kept faint and is off with Increase Contrast.
 - `Support/ThemeComponents.swift`: `Theme.backdrop/card/edge`, `Theme.reduceMotion`
   (`NSWorkspace.accessibilityDisplayShouldReduceMotion`), `GradientBadge`, `WindowBackdrop`, `.card()`, the
   `AccentButtonStyle`, `SoftButtonStyle` and `CircleIconButtonStyle` button styles, `CitrusProgressBar` (reads

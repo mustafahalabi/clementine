@@ -96,8 +96,8 @@ struct AccentButtonStyle: ButtonStyle {
         @Environment(\.colorSchemeContrast) private var contrast
         @State private var hovering = false
 
-        /// A light sheen, kept faint so white text stays at ≥ 4.5:1; none with Increase Contrast.
-        private var sheen: Double { contrast == .increased ? 0 : (hovering ? 0.16 : 0.10) }
+        /// A light sheen, kept faint so white text stays above 3:1 on the orange; none with Increase Contrast.
+        private var sheen: Double { contrast == .increased ? 0 : (hovering ? 0.10 : 0.06) }
 
         var body: some View {
             configuration.label

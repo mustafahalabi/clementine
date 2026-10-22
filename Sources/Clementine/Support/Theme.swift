@@ -17,14 +17,18 @@ enum Theme {
     /// Errors, a cherry red that sits well next to orange.
     static let cherry = Color(hex: 0xE5484D)
 
-    /// Fills that carry white text (buttons, chips, selected tabs, hovered slices) use a deeper peel than the
-    /// fruit itself: white on #FF9A3C was ~2.1:1. These stops keep white text at ≥ 4.5:1 (≥ 7:1 with Increase
-    /// Contrast). The bright tangerine stays for glows, washes and rings, which carry no text.
-    static let accentTopShade = Shade(normal: 0xBE4A0C, increased: 0x9C3510)     // 5.0:1 / 7.2:1 against white
-    static let accentBottomShade = Shade(normal: 0xB23C10, increased: 0x8A2C0E)  // 5.9:1 / 8.6:1
-    /// Accent-colored text and glyphs on the app's own surfaces: deep orange on light, bright orange on dark.
-    static let accentTextShade = Shade(normal: 0xB5400F, increased: 0x8A2C0E,
-                                       dark: 0xFFA25A, darkIncreased: 0xFFC598)  // ≥ 5.5:1 on cream / charcoal
+    /// Fills that carry white text (buttons, chips, selected tabs, hovered slices): the fruit, a shade deeper.
+    /// White on the old #FF9A3C was ~2.1:1; these stops are ≥ 3.0:1 at the lightest point (#EE6C14) and 3.9:1 at
+    /// the deep end, the large/bold-text threshold, since every label on them is bold. With Increase Contrast they
+    /// turn to a deep peel at ≥ 7:1. The bright tangerine stays for glows, washes, rings and progress bars.
+    static let accentTopShade = Shade(normal: 0xEE6C14, increased: 0x9C3510)     // 3.1:1 / 7.2:1 against white
+    static let accentBottomShade = Shade(normal: 0xE0501C, increased: 0x8A2C0E)  // 3.9:1 / 8.6:1
+    /// For the rare regular-weight small text on orange: ≥ 4.5:1 even without Increase Contrast.
+    static let accentDeepShade = Shade(normal: 0xBE4A0C, increased: 0x9C3510)    // 5.0:1 / 7.2:1
+    /// Accent glyphs and bold accent labels on the app's own surfaces: orange on light (3.8:1 on cream), bright on
+    /// dark; a deep peel or pale orange with Increase Contrast (≥ 7:1).
+    static let accentTextShade = Shade(normal: 0xE0501C, increased: 0x8A2C0E,
+                                       dark: 0xFFA25A, darkIncreased: 0xFFC598)
 
     /// Status words ("Done", "Failed", "Not found") and fills behind white status text, readable on both schemes.
     static let leafTextShade = Shade(normal: 0x1A7A48, increased: 0x146238, dark: 0x5BE09B, darkIncreased: 0x8AF0BC)
@@ -34,6 +38,7 @@ enum Theme {
     static let accentTop = accentTopShade.color
     static let accentBottom = accentBottomShade.color
     static let accentText = accentTextShade.color
+    static let accentDeep = accentDeepShade.color
     static let leafText = leafTextShade.color
     static let cherryText = cherryTextShade.color
     static let leafDeep = leafDeepShade.color

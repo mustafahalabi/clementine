@@ -76,7 +76,7 @@ extension UITest {
         }
     }
 
-    /// White text on the accent fills: ≥ 4.5:1 normally, ≥ 7:1 with Increase Contrast.
+    /// White text on the accent fills: ≥ 3:1 (bold labels) normally, ≥ 7:1 with Increase Contrast.
     private static var contrast: Suite {
         Suite(name: "accent contrast") { t in
             func luminance(_ hex: UInt32) -> Double {
@@ -96,12 +96,14 @@ extension UITest {
                     let normal = ratio(shade.hex(dark: dark, increased: false), white)
                     let high = ratio(shade.hex(dark: dark, increased: true), white)
                     let mode = dark ? "dark" : "light"
-                    t.check(normal >= 4.5, "white on accent \(name), \(mode): \(String(format: "%.2f", normal)):1")
+                    t.check(normal >= 3, "white on accent \(name), \(mode) (bold labels): \(String(format: "%.2f", normal)):1")
                     t.check(high >= 7, "white on accent \(name), \(mode), Increase Contrast: \(String(format: "%.2f", high)):1")
                 }
             }
+            let deep = ratio(Theme.accentDeepShade.hex(dark: false, increased: false), white)
+            t.check(deep >= 4.5, "white regular text on the deep accent: \(String(format: "%.2f", deep)):1")
             let text = Theme.accentTextShade
-            t.check(ratio(text.hex(dark: false, increased: false), cream) >= 4.5, "accent text on cream ≥ 4.5:1")
+            t.check(ratio(text.hex(dark: false, increased: false), cream) >= 3, "accent glyphs and bold labels on cream ≥ 3:1")
             t.check(ratio(text.hex(dark: true, increased: false), charcoal) >= 4.5, "accent text on charcoal ≥ 4.5:1")
             t.check(ratio(text.hex(dark: false, increased: true), cream) >= 7, "accent text on cream ≥ 7:1 with Increase Contrast")
             t.check(ratio(text.hex(dark: true, increased: true), charcoal) >= 7, "accent text on charcoal ≥ 7:1 with Increase Contrast")

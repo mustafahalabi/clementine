@@ -516,7 +516,7 @@ private struct FileTile: View {
                     .font(.system(size: 11.5, weight: .medium))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
-                    .background(highlighted ? AnyShapeStyle(Theme.accentTop) : AnyShapeStyle(Color.clear),
+                    .background(highlighted ? AnyShapeStyle(Theme.accentDeep) : AnyShapeStyle(Color.clear),
                                 in: RoundedRectangle(cornerRadius: 4))
                     .foregroundStyle(highlighted ? .white : .primary)
                 Text(size).font(.system(size: 10)).foregroundStyle(.secondary)

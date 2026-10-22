@@ -95,7 +95,7 @@ Output is one line per suite, `✓`/`✗` per check, then `N passed, M failed` (
 behind "Show details…", and the next card stacks below it, before and after opening the details, without
 covering its Close button; the stack is parked off-screen through `ProgressPanel.stackArea`), `onboarding seen`
 (the tour isn't marked seen until it has been shown and closed), `accent contrast` (white on the accent stops ≥
-4.5:1, ≥ 7:1 with Increase Contrast; accent text on cream and charcoal), `error copy` (brew hints only without
+3:1 for bold labels, ≥ 7:1 with Increase Contrast; the deep accent ≥ 4.5:1; accent text on cream and charcoal), `error copy` (brew hints only without
 bundled tools, `brew install webp` for img2webp, plain-sentence ffmpeg failures, the "Text (OCR)" slice) and
 `midline` (clicks on a control's exact center land, across button styles and the chip picker): 43 checks,
 about 25 s.
