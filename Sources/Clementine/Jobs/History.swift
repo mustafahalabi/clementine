@@ -9,6 +9,9 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     var inputs: [String]
     var outputs: [String]
     var date: Date
+    /// What each output looked like when the job finished, parallel to `outputs`. Missing in entries saved
+    /// before 0.1.1 (and for outputs that couldn't be read); those are trusted as before.
+    var stamps: [FileStamp?]?
 
     var inputURLs: [URL] { inputs.map { URL(fileURLWithPath: $0) } }
     var outputURLs: [URL] { outputs.map { URL(fileURLWithPath: $0) } }
@@ -16,10 +19,42 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
     /// Outputs that are still where the job left them.
     var existingOutputs: [URL] { outputURLs.filter { FileManager.default.fileExists(atPath: $0.path) } }
 
+    /// Whether `output` is still the file this job wrote, rather than an edited, replaced or renamed-over one.
+    func isUnchanged(_ output: URL) -> Bool {
+        guard let index = outputs.firstIndex(of: output.path), let stamps, index < stamps.count,
+              let recorded = stamps[index] else { return true }
+        return FileStamp(output) == recorded
+    }
+
     /// "photo.heic" or "photo.heic + 3 more", for menus.
     var subject: String {
         guard let first = inputURLs.first?.lastPathComponent else { return "" }
         return inputs.count > 1 ? "\(first) + \(inputs.count - 1) more" : first
+    }
+}
+
+/// Identifies a written file: its inode, size and modification time. Editing, replacing or saving over the file
+/// changes at least one of them. Folders are matched by inode alone: Finder touches them (.DS_Store) just by
+/// showing them, and an output folder replaced by another one still gets a new inode.
+struct FileStamp: Codable, Equatable {
+    var inode: UInt64
+    var size: UInt64
+    /// Seconds since 1970 as a Double, so the JSON keeps sub-second precision (ISO 8601 dates drop it).
+    var modified: Double
+
+    init?(_ url: URL) {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value,
+              let size = (attributes[.size] as? NSNumber)?.uint64Value,
+              let modified = attributes[.modificationDate] as? Date else { return nil }
+        let folder = attributes[.type] as? FileAttributeType == .typeDirectory
+        self.inode = inode
+        self.size = folder ? 0 : size
+        self.modified = folder ? 0 : modified.timeIntervalSince1970
+    }
+
+    static func == (a: FileStamp, b: FileStamp) -> Bool {
+        a.inode == b.inode && a.size == b.size && abs(a.modified - b.modified) < 0.001
     }
 }
 
@@ -54,7 +89,8 @@ final class HistoryStore: ObservableObject {
     func record(_ action: Action, inputs: [URL], outputs: [URL], date: Date = Date()) -> HistoryEntry {
         let entry = HistoryEntry(actionID: action.id, title: JobRunner.title(for: action),
                                  symbol: action.symbol ?? "arrow.triangle.2.circlepath",
-                                 inputs: inputs.map(\.path), outputs: outputs.map(\.path), date: date)
+                                 inputs: inputs.map(\.path), outputs: outputs.map(\.path), date: date,
+                                 stamps: outputs.map { FileStamp($0) })
         entries.insert(entry, at: 0)
         if entries.count > Self.limit { entries.removeLast(entries.count - Self.limit) }
         now = date
@@ -68,16 +104,29 @@ final class HistoryStore: ObservableObject {
     }
 
     /// Moves the entry's outputs to the Trash and forgets it. Returns where each file went.
+    /// Outputs changed since the job wrote them (edited, or replaced by another file at the same path) stay put:
+    /// they're no longer only Clementine's. If that leaves nothing to trash, it throws to say so.
     @discardableResult
     func undo(_ entry: HistoryEntry) throws -> [URL] {
         var trashed: [URL] = []
+        var kept: [URL] = []
         for output in entry.existingOutputs {
+            guard entry.isUnchanged(output) else {
+                kept.append(output)
+                continue
+            }
             var location: NSURL?
             try FileManager.default.trashItem(at: output, resultingItemURL: &location)
             if let location = location as URL? { trashed.append(location) }
         }
         entries.removeAll { $0.id == entry.id }
         save()
+        if !kept.isEmpty {
+            let names = kept.map(\.lastPathComponent).joined(separator: ", ")
+            let note = "\(names) changed after Clementine made \(kept.count == 1 ? "it" : "them"), so \(kept.count == 1 ? "it was" : "they were") left in place."
+            if trashed.isEmpty { throw ClementineError.message(note) }
+            NSLog("Clementine: %@", note)
+        }
         return trashed
     }
 

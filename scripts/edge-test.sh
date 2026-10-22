@@ -136,6 +136,16 @@ let page = PDFDocument(url: URL(fileURLWithPath: CommandLine.arguments[1]))!.pag
 let paper = NSPrintInfo.shared.paperSize
 print(abs(page.width - paper.width) < 1 && abs(page.height - paper.height) < 1 ? "ok \(page)" : "page \(page) vs paper \(paper)")
 SWIFT
+# Names that look like tar/zip options; archived members must stay plain paths. "PWNED" appearing anywhere means
+# a name was run as an option.
+mkdir -p "$F/dash" "$F/repack"
+for n in -m -T.txt "--use-compress-program=touch PWNED"; do echo "$n" > "$F/dash/$n"; done
+(cd "$F/dash" && tar -cf ../repack/odd.tar -- ./-m ./-T.txt "./--use-compress-program=touch PWNED")
+(cd "$F/dash" && tar -c --format zip -f ../repack/odd.zip -- ./-m ./-T.txt "./--use-compress-program=touch PWNED")
+# Links that point out of the archive must not be extracted; a link to a sibling is fine.
+mkdir -p "$F/links" && (cd "$F/links" && echo real > real.txt && ln -s /etc/hosts innocent.txt && ln -s ../../outside.txt up \
+  && ln -s real.txt ok && ln -s . self && ln -s self/.. via-self && tar -cf ../links.tar real.txt innocent.txt up ok self via-self)
+rm -rf "$F/links"
 
 pass=0; fail=0; failures=()
 ok() { pass=$((pass + 1)); printf '  ✓ %s\n' "$1"; }
@@ -301,6 +311,20 @@ expect "zip from different folders stores plain names" '[[ "$(unzip -Z1 "$OUT" |
 expect "tar from different folders stores plain names" '[[ "$(tar -tf "$OUT" | sort | tr "\n" " ")" == "cover.png solo.txt " ]]' -- archive.tar "$F/cover.png" "$F/one/solo.txt"
 expect "no staging folders left behind" '! ls -a "$F" | grep -q "Being Saved"' -- archive.gzip "$F/cover.png" "$F/one/solo.txt"
 expect_error "extract non-archive" "tar" -- convert.archive.extract "$F/broken.mp4"
+
+DASH_NAMES='--use-compress-program=touch PWNED -T.txt -m '
+names_are() { [[ "$(cat | grep -v '/$' | LC_ALL=C sort | tr '\n' ' ')" == "$DASH_NAMES" ]]; }
+untouched() { [[ ! -e PWNED && -z "$(find "$WORK" -name PWNED)" && -f "$F/dash/-m" && -f "$F/dash/-T.txt" && -f "$F/dash/--use-compress-program=touch PWNED" ]]; }
+DASH=("$F/dash/-m" "$F/dash/-T.txt" "$F/dash/--use-compress-program=touch PWNED")
+expect "option-like names → zip as plain names" 'unzip -Z1 "$OUT" | names_are && untouched' -- archive.zip "${DASH[@]}"
+expect "option-like names → tar as plain names" 'tar -tf "$OUT" | names_are && untouched' -- archive.tar "${DASH[@]}"
+expect "option-like names → tar.gz as plain names" 'tar -tzf "$OUT" | names_are && untouched' -- archive.gzip "${DASH[@]}"
+expect "repack tar with option-like members → zip" 'unzip -Z1 "$OUT" | names_are && untouched' -- convert.archive.zip "$F/repack/odd.tar"
+expect "repack zip with option-like members → tar" 'tar -tf "$OUT" | names_are && untouched' -- convert.archive.tar "$F/repack/odd.zip"
+expect "repack zip with option-like members → tar.gz" 'tar -tzf "$OUT" | names_are && untouched' -- convert.archive.gzip "$F/repack/odd.zip"
+expect "extract drops links that leave the archive" '[[ -f "$OUT/real.txt" && -L "$OUT/ok" && ! -e "$OUT/innocent.txt" && ! -L "$OUT/innocent.txt" && ! -L "$OUT/up" && ! -L "$OUT/self" && ! -L "$OUT/via-self" ]]' -- convert.archive.extract "$F/links.tar"
+expect "zip marks non-ASCII names as UTF-8" 'python3 -I -c "import sys,zipfile; i=zipfile.ZipFile(sys.argv[1]).infolist(); sys.exit(0 if i and all(e.flag_bits & 0x800 for e in i) else 1)" "$OUT"' -- archive.zip "$F/it's \"quoted\" & ünïcode.png"
+rm -f PWNED
 
 echo
 echo "$pass passed, $fail failed"
