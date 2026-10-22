@@ -9,8 +9,11 @@ enum Entry {
         if UIPreview.handle(arguments) || UITest.handle(arguments) { exit(0) }
         #endif
         if let command = arguments.first, CLI.commands.contains(command) {
+            Output.sweepStale()
             CLI.run(arguments)
         }
+        // Off the main thread: a recorded folder may be on a slow or unmounted network volume.
+        DispatchQueue.global(qos: .utility).async { Output.sweepStale() }
         ClementineApp.main()
     }
 }
