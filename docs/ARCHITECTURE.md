@@ -249,7 +249,7 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
     isn't ours, so ffmpeg must fail rather than overwrite it.
   - `transcode`: wraps the run in `Output.produce`; with `hardware: true` it goes through `encode`.
   - `encode` + `Hardware`: rewrites software x264/x265 CRF settings for `h264_videotoolbox`/`hevc_videotoolbox`
-    (`-q:v`, calibrated with VMAF: CRF 20 ≈ q 65) when Settings › Use hardware encoding for video for video is on and the CLI wasn't
+    (`-q:v`, calibrated with VMAF: CRF 20 ≈ q 65) when Settings › Use hardware encoding for video is on and the CLI wasn't
     given `--software`. If VideoToolbox fails, the partial output is deleted and the software args run. Engines
     keep writing plain x264 args; Compress and Target Size don't ask for hardware (x264 is ~25% smaller at equal
     quality, and two-pass has no VideoToolbox equivalent).
