@@ -28,6 +28,8 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Converts and edits files where they are, on your Mac.</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
@@ -40,12 +42,12 @@
 			<string>convertFiles</string>
 			<key>NSPortName</key>
 			<string>Clementine</string>
+			<key>NSRequiredContext</key>
+			<dict/>
 			<key>NSSendFileTypes</key>
 			<array>
 				<string>public.item</string>
 			</array>
-			<key>NSRequiredContext</key>
-			<dict/>
 		</dict>
 		<dict>
 			<key>NSMenuItem</key>
@@ -57,19 +59,17 @@
 			<string>toolFiles</string>
 			<key>NSPortName</key>
 			<string>Clementine</string>
+			<key>NSRequiredContext</key>
+			<dict/>
 			<key>NSSendFileTypes</key>
 			<array>
 				<string>public.item</string>
 			</array>
-			<key>NSRequiredContext</key>
-			<dict/>
 		</dict>
 	</array>
-	<key>NSHumanReadableCopyright</key>
-	<string>Converts and edits files where they are, on your Mac.</string>
 	<key>SUFeedURL</key>
 	<string>https://github.com/mustafahalabi/clementine/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY</string>
+	<string>56YNaECFNCFclSy560XaB+4lXRUfHVUhoZRMEPROJKo=</string>
 </dict>
 </plist>
