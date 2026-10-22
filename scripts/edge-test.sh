@@ -7,9 +7,8 @@ cd "$(dirname "$0")/.."
 
 swift build -q || exit 1
 BIN="$(swift build --show-bin-path)/Clementine"
-WORK="$(mktemp -d /tmp/clementine-edge.XXXXXX)"
-F="$WORK/fixtures"
-mkdir -p "$F"
+source scripts/test-lib.sh
+test_setup edge
 q() { ffmpeg -loglevel error -y "$@"; }
 probe() { ffprobe -v error -of csv=p=0 "$@"; }
 
@@ -157,7 +156,7 @@ expect() {
   local check=(); while [[ "$1" != "--" ]]; do check+=("$1"); shift; done; shift
   local out
   # Output paths come from stdout only: system frameworks sometimes log noise to stderr (e.g. on CI VMs).
-  local err; err="$(mktemp)"
+  local err; err="$(mktemp "$WORK/err.XXXXXX")"
   if ! out="$("$BIN" --run "$@" 2>"$err")"; then bad "$name" "$(cat "$err") $out"; rm -f "$err"; return; fi
   rm -f "$err"
   OUT="$(echo "$out" | head -1)"
@@ -306,6 +305,9 @@ echo "Archives"
 expect "single-file zip extracts the file, not a folder" '[[ -f "$OUT" && "$(basename "$OUT")" == solo*.txt ]]' -- convert.archive.extract "$F/single.zip"
 expect "tar.bz2 extract with spaces" '[[ -d "$OUT" && -f "$OUT/x.txt" ]]' -- convert.archive.extract "$F/bz.tar.bz2"
 expect "tar.bz2 → zip name" '[[ "$(basename "$OUT")" == "bz.zip" ]]' -- convert.archive.zip "$F/bz.tar.bz2"
+# grep without -q reads all of tar's output, so pipefail can't trip on SIGPIPE.
+expect "tar.bz2 → gzip is bz.tar.gz with the folder" '[[ "$(basename "$OUT")" == "bz.tar.gz" ]] && tar -tzf "$OUT" | grep -x "dir with space/x.txt" >/dev/null' -- convert.archive.gzip "$F/bz.tar.bz2"
+expect "single-file zip → gzip of that file" '[[ "$(basename "$OUT")" == solo*.txt.gz && "$(gzip -dc "$OUT")" == solo ]]' -- convert.archive.gzip "$F/single.zip"
 expect "zip folder with spaces" 'unzip -Z1 "$OUT" | grep -qx "dir with space/x.txt"' -- archive.zip "$F/dir with space"
 expect "zip from different folders stores plain names" '[[ "$(unzip -Z1 "$OUT" | sort | tr "\n" " ")" == "cover.png solo.txt " ]]' -- archive.zip "$F/cover.png" "$F/one/solo.txt"
 expect "tar from different folders stores plain names" '[[ "$(tar -tf "$OUT" | sort | tr "\n" " ")" == "cover.png solo.txt " ]]' -- archive.tar "$F/cover.png" "$F/one/solo.txt"

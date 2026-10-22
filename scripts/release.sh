@@ -11,6 +11,7 @@
 #   SPARKLE_KEY_FILE   EdDSA private key file for Sparkle's sign_update (optional; see RELEASING.md).
 #   UNIVERSAL=1        arm64 + x86_64 app and tools (bigger; default is this Mac's architecture).
 #   SKIP_TOOLS=1       don't run scripts/fetch-tools.sh (ship whatever is in vendor/bin, possibly nothing).
+#   DMG_LAYOUT=0       skip create-dmg's Finder window layout (plain DMG with an Applications link).
 #
 # The version comes from CFBundleShortVersionString in Resources/Info.plist.
 set -euo pipefail
@@ -106,11 +107,30 @@ ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 
 step "Packaging $DMG"
 STAGE="$(mktemp -d /tmp/clementine-dmg.XXXXXX)"
-trap 'rm -rf "$STAGE"' EXIT
+trap 'rm -rf "$STAGE" "$STAGE.create-dmg.log"' EXIT
 ditto "$APP" "$STAGE/Clementine.app"
-ln -s /Applications "$STAGE/Applications"
 cp THIRD_PARTY_NOTICES.md "$STAGE/Third-Party Notices.md"
-hdiutil create -quiet -volname "Clementine $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG"
+# With create-dmg (brew install create-dmg) the window opens laid out: app on the left, Applications on the right,
+# the notices below. Its Finder AppleScript needs a GUI session and Automation permission for Finder; if that
+# fails, or DMG_LAYOUT=0, the DMG is built plainly (same contents, default window).
+DMG_DONE=""
+if [[ "${DMG_LAYOUT:-1}" != 0 ]] && command -v create-dmg >/dev/null; then
+  if create-dmg --volname "Clementine $VERSION" --filesystem HFS+ --format UDZO --hdiutil-quiet \
+       --window-pos 200 140 --window-size 560 400 --icon-size 112 --text-size 13 \
+       --icon "Clementine.app" 150 160 --hide-extension "Clementine.app" --app-drop-link 410 160 \
+       --icon "Third-Party Notices.md" 280 310 \
+       "$DMG" "$STAGE" >"$STAGE.create-dmg.log" 2>&1; then
+    DMG_DONE=1
+  else
+    tail -20 "$STAGE.create-dmg.log" >&2
+    warn "create-dmg failed (output above); building the DMG without a window layout."
+    rm -f "$DMG"
+  fi
+fi
+if [[ -z "$DMG_DONE" ]]; then
+  ln -s /Applications "$STAGE/Applications"
+  hdiutil create -quiet -volname "Clementine $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG"
+fi
 if [[ -n "$SIGNED" ]]; then
   codesign --force --sign "$IDENTITY" --timestamp "$DMG"
   if [[ -n "$NOTARIZE" ]]; then
@@ -127,10 +147,11 @@ if [[ -n "${SPARKLE_KEY_FILE:-}" && -n "$SIGN_UPDATE" ]]; then
   "$SIGN_UPDATE" --ed-key-file "$SPARKLE_KEY_FILE" "$ZIP" | tee "$ZIP.sparkle.txt"
 fi
 
-(cd "$DIST" && shasum -a 256 "$(basename "$ZIP")" "$(basename "$DMG")" > "Clementine-$VERSION$SUFFIX.sha256")
+SHA="$DIST/Clementine-$VERSION$SUFFIX.sha256"
+(cd "$DIST" && shasum -a 256 "$(basename "$ZIP")" "$(basename "$DMG")" > "$(basename "$SHA")")
 
 step "Done"
-ls -lh "$ZIP" "$DMG"
+ls -lh "$ZIP" "$DMG" "$SHA"
 if [[ -z "$SIGNED" ]]; then
   warn "UNSIGNED build (ad-hoc signature, not notarized). For local testing only."
 elif [[ -z "$NOTARIZE" ]]; then

@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The job name is the required status check on main; keep it `test`.
   test:
     runs-on: macos-latest
     timeout-minutes: 40
@@ -22,35 +23,96 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Toolchain
+        id: toolchain
         run: |
           sw_vers
           xcodebuild -version
           swift --version
+          echo "swift=$(swift --version 2>&1 | head -1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache SwiftPM
+      # The whole .build (dependencies and compiled objects), per toolchain: a warm cache makes the debug and
+      # release builds incremental.
+      - name: Cache .build
         uses: actions/cache@v4
         with:
           path: |
-            .build/artifacts
-            .build/checkouts
-            .build/repositories
+            .build
             ~/Library/Caches/org.swift.swiftpm
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: spm-${{ runner.os }}-
+          key: build-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.swift }}-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**') }}
+          restore-keys: |
+            build-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.swift }}-${{ hashFiles('Package.resolved') }}-
 
+      # The ffmpeg/ffprobe/cwebp/img2webp builds that releases bundle (verified by checksum and signature).
+      - name: Cache bundled tools
+        id: tools-cache
+        uses: actions/cache@v4
+        with:
+          path: vendor/bin
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/fetch-tools.sh') }}
+
+      - name: Fetch bundled tools
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        run: make tools
+
+      # Homebrew's ffmpeg makes the test fixtures (and webp's gif2webp some stress fixtures); the app under test
+      # uses vendor/bin (scripts/test-lib.sh points the Settings tools folder at it).
       - name: Install ffmpeg and webp
         run: brew install ffmpeg webp
 
       - name: Build
+        id: build
         run: swift build
 
+      - name: Release build
+        run: swift build -c release
+
+      # Each suite is its own step and runs even if an earlier one failed, so every result is reported.
       - name: Smoke test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: scripts/smoke-test.sh
-
       - name: Edge-case test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: scripts/edge-test.sh
+      - name: Stress test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/stress-test.sh
+      - name: Image editor test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/test-image-editor.sh
+      - name: Waveform test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/test-waveform.sh
+      - name: PDF and metadata test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/test-pdf-metadata.sh
+      - name: Productivity test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/test-productivity.sh
+      - name: Lifecycle test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/test-lifecycle.sh
 
-      - name: App bundle (embeds Sparkle)
+      - name: App bundle (embeds Sparkle and the tools)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           scripts/bundle.sh debug
-          build/Clementine.app/Contents/MacOS/Clementine --help
+          APP_BIN=build/Clementine.app/Contents/MacOS/Clementine
+          "$APP_BIN" --help
+          test -x build/Clementine.app/Contents/Resources/bin/ffmpeg
+          # A Settings tools folder must win over the bundled tools (users can swap in their own ffmpeg).
+          FAKE="$(mktemp -d)"; MARK="$FAKE/used"
+          printf '#!/bin/sh\ntouch "%s"\nexit 1\n' "$MARK" > "$FAKE/ffprobe"; chmod +x "$FAKE/ffprobe"
+          SUITE="app.clementine.ci.$$"
+          defaults write "$SUITE" toolsDirectory -string "$FAKE"
+          ffmpeg -loglevel error -f lavfi -i sine=r=44100 -t 1 "$FAKE/tone.wav"
+          CLEMENTINE_DEFAULTS_SUITE="$SUITE" "$APP_BIN" --run tool.metadata "$FAKE/tone.wav" >/dev/null 2>&1 || true
+          defaults delete "$SUITE"
+          test -f "$MARK" || { echo "::error::the Settings tools folder was not searched before the bundled tools"; exit 1; }
+          echo "Settings tools folder takes priority over bundled tools"
+
+      # Experiment: does the off-screen interaction harness run on GitHub's macOS runners? Never blocks the check.
+      - name: UI test (non-blocking)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        run: make ui-test

@@ -7,7 +7,7 @@ let package = Package(
     dependencies: [
         // Auto-updates. A binary XCFramework: SwiftPM copies Sparkle.framework next to the debug/release binary
         // (found via @loader_path), and scripts/bundle.sh embeds it in Contents/Frameworks for the app.
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
     ],
     targets: [
         .executableTarget(

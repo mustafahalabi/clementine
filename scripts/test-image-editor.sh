@@ -6,9 +6,8 @@ cd "$(dirname "$0")/.."
 
 swift build -q || exit 1
 BIN="$(swift build --show-bin-path)/Clementine"
-WORK="$(mktemp -d /tmp/clementine-editor.XXXXXX)"
-F="$WORK/fixtures"
-mkdir -p "$F"
+source scripts/test-lib.sh
+test_setup editor
 q() { ffmpeg -loglevel error -y "$@"; }
 
 # ---------------------------------------------------------------- helper (fixtures and pixel checks, via ImageIO)

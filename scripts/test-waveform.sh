@@ -6,9 +6,8 @@ cd "$(dirname "$0")/.."
 
 swift build -q || exit 1
 BIN="$(swift build --show-bin-path)/Clementine"
-WORK="$(mktemp -d /tmp/clementine-waveform.XXXXXX)"
-F="$WORK/fixtures"
-mkdir -p "$F"
+source scripts/test-lib.sh
+test_setup waveform
 q() { ffmpeg -loglevel error -y "$@"; }
 probe() { ffprobe -v error -of csv=p=0 "$@"; }
 
@@ -93,15 +92,19 @@ expect "start only runs to the end" 'near "$(dur "$OUT")" 9.0 0.1' -- tool.media
 expect "video trim with editor times" 'near "$(dur "$OUT")" 2.5 0.2' -- tool.media.trim --set start=0:01.000 --set end=0:03.500 "$F/speech.mp4"
 
 echo "Editors (offscreen render)"
-if "$BIN" --render-ui "$WORK/renders" "$F/speech.wav" "$F/speech.wav" "$F/speech.mp4" >/dev/null 2>&1; then
+# Rendering needs a window server, i.e. a logged-in GUI (Aqua) session; over plain ssh there is none. Anywhere
+# else a non-zero exit or a crash is a failure, not a skip.
+if [[ "$(launchctl managername 2>/dev/null)" != Aqua ]]; then
+  echo "  (skipped: no GUI session, launchctl managername is '$(launchctl managername 2>/dev/null)')"
+elif "$BIN" --render-ui "$WORK/renders" "$F/speech.wav" "$F/speech.wav" "$F/speech.mp4" >"$WORK/render.log" 2>&1; status=$?; (( status != 0 )); then
+  bad "--render-ui" "exited with status $status (log: $(tail -5 "$WORK/render.log" | tr '\n' ' '))"
+else
   for name in trim-audio trim-video bleep channels-swap; do
     for mode in light dark; do
       png="$WORK/renders/$name-$mode.png"
       if [[ -f "$png" && $(stat -f%z "$png") -gt 20000 ]]; then ok "$name ($mode) rendered"; else bad "$name ($mode)" "missing or empty render"; fi
     done
   done
-else
-  echo "  (skipped: --render-ui needs a debug build)"
 fi
 
 echo

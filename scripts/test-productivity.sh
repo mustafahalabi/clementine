@@ -7,16 +7,10 @@ cd "$(dirname "$0")/.."
 
 swift build -q || exit 1
 BIN="$(swift build --show-bin-path)/Clementine"
-WORK="$(mktemp -d /tmp/clementine-productivity.XXXXXX)"
-F="$WORK/fixtures"
-mkdir -p "$F"
-export CLEMENTINE_DEFAULTS_SUITE="app.clementine.tests.$$"
+source scripts/test-lib.sh
+test_defaults_suite   # scratch suite, deleted on exit
+test_setup productivity
 export CLEMENTINE_SUPPORT_DIR="$WORK/support"
-cleanup() {
-  defaults delete "$CLEMENTINE_DEFAULTS_SUITE" >/dev/null 2>&1
-  rm -f "$HOME/Library/Preferences/$CLEMENTINE_DEFAULTS_SUITE.plist"
-}
-trap cleanup EXIT
 q() { ffmpeg -loglevel error -y "$@"; }
 
 echo "Fixtures in $F"

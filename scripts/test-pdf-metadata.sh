@@ -6,9 +6,8 @@ cd "$(dirname "$0")/.."
 
 swift build -q || exit 1
 BIN="$(swift build --show-bin-path)/Clementine"
-WORK="$(mktemp -d /tmp/clementine-pdfmeta.XXXXXX)"
-F="$WORK/fixtures"
-mkdir -p "$F"
+source scripts/test-lib.sh
+test_setup pdfmeta
 q() { ffmpeg -loglevel error -y "$@"; }
 
 # Helper: PDF fixtures and a page dump ("count|rotation:first-word-of-text ...").
@@ -91,7 +90,11 @@ expect() {
   local out
   if ! out="$("$BIN" --run "$@" 2>&1)"; then bad "$name" "$out"; return; fi
   OUT="$(echo "$out" | head -1)"
-  if eval "${check[*]}"; then ok "$name"; else bad "$name" "assertion failed: ${check[*]} (output: $OUT)"; fi
+  if eval "${check[*]}"; then ok "$name"; return; fi
+  # For media outputs, show what ffprobe sees (tags and streams), so a failure on CI can be read from the log.
+  local seen=""
+  [[ "$OUT" =~ \.(mp3|m4a|mov|mp4|opus|flac)$ ]] && seen=" ffprobe: $(ffprobe -v error -show_entries format_tags:stream=codec_type,codec_tag_string -of compact "$OUT" 2>&1 | tr '\n' ' ')"
+  bad "$name" "assertion failed: ${check[*]} (output: $OUT)$seen"
 }
 # expect_error <name> <substring> -- <action args…>: action must fail with a readable message containing substring.
 expect_error() {
@@ -108,7 +111,9 @@ tag() {
   [[ -n "$v" ]] || v="$(ffprobe -v error -select_streams a:0 -show_entries "stream_tags=$2" -of default=nw=1:nk=1 "$1")"
   echo "$v"
 }
-nstreams() { ffprobe -v error -select_streams "$2" -show_entries stream=index -of csv=p=0 "$1" | wc -l | tr -d ' '; }
+# Top-level streams only: ffprobe 9 also lists the streams inside stream groups (e.g. video + timecode in a MOV),
+# which plain csv output can't tell apart.
+nstreams() { ffprobe -v error -select_streams "$2" -show_entries stream=index -of json "$1" | python3 -c 'import json, sys; print(len(json.load(sys.stdin).get("streams", [])))'; }
 
 echo "Page specs"
 expect "plain list unchanged" '[[ "$(pages "$OUT")" == "3|0:P3 0:P1 0:P2" ]]' -- tool.pdf.pages --set "pages=3, 1-2" "$F/five.pdf"

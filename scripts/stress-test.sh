@@ -9,9 +9,8 @@ cd "$(dirname "$0")/.."
 for i in 1 2 3 4 5; do swift build -q 2>/dev/null && break; echo "build failed, retrying in 30s"; sleep 30; done
 BIN="$(swift build --show-bin-path)/Clementine"
 [[ -x "$BIN" ]] || { echo "no binary"; exit 1; }
-WORK="$(mktemp -d /tmp/clementine-stress.XXXXXX)"
-F="$WORK/fixtures"
-mkdir -p "$F"
+source scripts/test-lib.sh
+test_setup stress
 q() { ffmpeg -loglevel error -y "$@"; }
 probe() { ffprobe -v error -of csv=p=0 "$@"; }
 
@@ -183,7 +182,7 @@ expect() {
   local check=(); while [[ "$1" != "--" ]]; do check+=("$1"); shift; done; shift
   local out
   # Output paths come from stdout only: system frameworks sometimes log noise to stderr (e.g. on CI VMs).
-  local err; err="$(mktemp)"
+  local err; err="$(mktemp "$WORK/err.XXXXXX")"
   if ! out="$("$BIN" --run "$@" 2>"$err")"; then bad "$name" "$(cat "$err") $out"; rm -f "$err"; return; fi
   rm -f "$err"
   OUT="$(echo "$out" | head -1)"; ALL="$out"
@@ -224,14 +223,16 @@ pix() { "$H" pix "$@"; }
 pdfi() { "$H" pdfinfo "$1"; }
 vdims() { probe -select_streams v:0 -show_entries stream=width,height "$1" | head -1; }
 dur() { probe -show_entries format=duration "$1"; }
-nstreams() { probe -select_streams "$2" -show_entries stream=index "$1" | wc -l | tr -d ' '; }
+# Top-level streams only: ffprobe 9 also lists the streams inside stream groups (e.g. video + timecode in a MOV),
+# which plain csv output can't tell apart.
+nstreams() { ffprobe -v error -select_streams "$2" -show_entries stream=index -of json "$1" | python3 -c 'import json, sys; print(len(json.load(sys.stdin).get("streams", [])))'; }
 near() { awk -v a="$1" -v b="$2" -v t="${3:-0.3}" 'BEGIN{d=a-b; if(d<0)d=-d; exit !(d<=t)}'; }
 size() { stat -f%z "$1"; }
 
 # ---------------------------------------------------------------- cases
 echo "iPhone-style MOV (timecode + location)"
 expect "strip keeps a/v, drops location"  '[[ $(nstreams "$OUT" v) == 1 && $(nstreams "$OUT" a) == 1 ]] && ! ffprobe -v error -show_entries format_tags "$OUT" | grep -q 48.85' -- tool.metadata.strip "$F/iphone.mov"
-expect "split 1s → ≥3 parts, all playable" '[[ $(ls "$OUT" | wc -l) -ge 2 ]] && for p in "$OUT"/*; do [[ $(nstreams "$p" v) == 1 ]] || exit 1; done' -- tool.media.split --set seconds=1 "$F/iphone.mov"
+expect "split 1s → ≥3 parts, all playable" '[[ $(ls "$OUT" | wc -l) -ge 2 ]] && ( for p in "$OUT"/*; do [[ $(nstreams "$p" v) == 1 ]] || exit 1; done )' -- tool.media.split --set seconds=1 "$F/iphone.mov"
 expect "trim → mov ~1s" 'near "$(dur "$OUT")" 1.0' -- tool.media.trim --set start=1 --set end=2 "$F/iphone.mov"
 expect "mute keeps video only" '[[ $(nstreams "$OUT" a) == 0 && $(nstreams "$OUT" v) == 1 ]]' -- tool.video.mute "$F/iphone.mov"
 expect "→ mp4" '[[ -f "$OUT" ]]' -- convert.media.mp4 "$F/iphone.mov"
@@ -459,5 +460,5 @@ rm -rf "$TRASHED"
 unset CLEMENTINE_SUPPORT_DIR
 
 echo
-echo "Passed $pass, failed $fail. Work dir: $WORK"
+echo "Passed $pass, failed $fail."
 if (( fail > 0 )); then printf '  ✗ %s\n' "${failures[@]}"; exit 1; fi

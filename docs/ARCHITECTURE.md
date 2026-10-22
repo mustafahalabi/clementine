@@ -214,9 +214,11 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
 
 ### 3.6 Engines and external tools — `Engines/`
 
-- **ToolLocator** (`ProcessRunner.swift`) searches in this order: `Bundle.main.resourceURL/bin` (that is
-  `Contents/Resources/bin`), then `Prefs.toolsDirectory` (tilde-expanded), then `/opt/homebrew/bin`,
-  `/usr/local/bin`, `/usr/bin`, `/bin`. `require` throws `ClementineError.missingTool`. In builds without
+- **ToolLocator** (`ProcessRunner.swift`) searches in this order: `Prefs.toolsDirectory` (tilde-expanded), then
+  `Bundle.main.resourceURL/bin` (that is `Contents/Resources/bin`), then `/opt/homebrew/bin`, `/usr/local/bin`,
+  `/usr/bin`, `/bin`. The Settings folder comes first so people can use their own ffmpeg build without touching
+  the signed bundle (the GPL lets them replace it; see THIRD_PARTY_NOTICES.md), and the test suites use it to run
+  against the bundled builds in `vendor/bin`. `require` throws `ClementineError.missingTool`. In builds without
   bundled tools its message suggests `brew install ffmpeg` (ffmpeg, ffprobe) or `brew install webp` (cwebp,
   img2webp); builds that bundle them (`ClementineError.bundlesTools`) suggest reinstalling instead. External tools used: `ffmpeg`, `ffprobe`, `cwebp` (WebP output;
   ImageIO can't write WebP, see `ImageEngine.swift`) and `img2webp` (fetched and bundled). Archives use the

@@ -7,7 +7,7 @@ third-party software below. This file ships inside the app at `Clementine.app/Co
 | --- | --- | --- | --- |
 | FFmpeg (`ffmpeg`, `ffprobe`) | 9.0.2, static build by Martin Riedl | `Contents/Resources/bin` | **GPL v3 or later** (this build enables GPL components) |
 | libwebp tools (`cwebp`, `img2webp`) | 1.6.0, official Google binaries | `Contents/Resources/bin` | BSD 3-Clause + WebM patent grant |
-| Sparkle | 2.x | `Contents/Frameworks/Sparkle.framework` | MIT (plus bundled third-party notices) |
+| Sparkle | 2.10.0 | `Contents/Frameworks/Sparkle.framework` | MIT (plus bundled third-party notices) |
 
 `scripts/fetch-tools.sh` downloads the exact binaries listed here and verifies their checksums and signatures.
 
@@ -31,8 +31,14 @@ binaries must still honor the GPL for them:
   https://ffmpeg.martin-riedl.de. On request, the maintainers of Clementine will provide the corresponding source
   for the binaries in any Clementine release for at least three years after that release.
 - **License text:** https://www.gnu.org/licenses/gpl-3.0.txt
-- **No extra restrictions:** you may replace the bundled `ffmpeg`/`ffprobe` with your own build (drop them into
-  `Contents/Resources/bin`, or set a tools folder in Settings).
+- **No extra restrictions, and you can use your own build:** put your own `ffmpeg`/`ffprobe` (and, if you like,
+  `cwebp`/`img2webp`) in a folder and enter its path as **Extra tools folder** in Settings › General (since
+  Clementine 0.1.1). Clementine looks in that folder *before* its bundled copies, so your build is used for
+  everything while the app stays intact and properly signed; the rows below the field show which file each tool
+  resolves to. Any tool missing from your folder still comes from the bundle. Clear the field to go back to the
+  bundled tools.
+  (Replacing files inside `Clementine.app/Contents/Resources/bin` also works, but it breaks the app's code
+  signature, so macOS may refuse to open it; prefer the Settings folder.)
 
 **Want an LGPL-only app?** Build or download an FFmpeg without `--enable-gpl` / `--enable-nonfree` (an "LGPL
 build"). You lose libx264/libx265 (use `h264_videotoolbox` / `hevc_videotoolbox` instead) and a few filters;
@@ -82,7 +88,7 @@ https://chromium.googlesource.com/webm/libwebp/+/refs/tags/v1.6.0/PATENTS
 ## Sparkle
 
 https://sparkle-project.org — used for "Check for Updates…". Its full license, including the notices for the
-components Sparkle itself bundles, is at https://github.com/sparkle-project/Sparkle/blob/2.x/LICENSE.
+components Sparkle itself bundles, is at https://github.com/sparkle-project/Sparkle/blob/2.10.0/LICENSE.
 
 ```
 Copyright (c) 2006-2013 Andy Matuschak.

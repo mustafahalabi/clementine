@@ -7,9 +7,8 @@ cd "$(dirname "$0")/.."
 swift build -q || exit 1
 BIN="$(swift build --show-bin-path)/Clementine"
 FILTER="${1:-}"
-WORK="$(mktemp -d /tmp/clementine-smoke.XXXXXX)"
-F="$WORK/fixtures"
-mkdir -p "$F"
+source scripts/test-lib.sh
+test_setup smoke
 
 echo "Fixtures in $F"
 ffmpeg -loglevel error -f lavfi -i testsrc=size=640x360:rate=30 -f lavfi -i sine=frequency=440:sample_rate=48000 \
@@ -53,11 +52,26 @@ pass=0; fail=0; failures=()
 run() { # run <action-id> [--set k=v]... <files>
   local id="$1"
   [[ -n "$FILTER" && "$id" != *"$FILTER"* ]] && return
-  local out
-  if out="$("$BIN" --run "$@" 2>&1)"; then
+  local out problem="" line
+  # Output paths come from stdout only (CI VMs log framework noise to stderr).
+  if ! out="$("$BIN" --run "$@" 2>"$WORK/stderr")"; then
+    problem="$out$(cat "$WORK/stderr")"
+  elif [[ "$out" == "== "* ]]; then
+    [[ -n "$(echo "$out" | sed 1d)" ]] || problem="empty text result"
+  elif [[ -z "$out" ]]; then
+    problem="no output path"
+  else
+    # Every output must exist and have content: a non-empty file, or a folder with something in it.
+    while IFS= read -r line; do
+      if [[ -f "$line" ]]; then [[ -s "$line" ]] || problem="empty file: $line"
+      elif [[ -d "$line" ]]; then [[ -n "$(ls -A "$line")" ]] || problem="empty folder: $line"
+      else problem="missing output: $line (stdout: $(echo "$out" | head -3 | cat -v | tr '\n' '|'))"; fi
+    done <<<"$out"
+  fi
+  if [[ -z "$problem" ]]; then
     pass=$((pass + 1)); printf '  ✓ %-28s %s\n' "$id" "$(echo "$out" | head -1 | sed "s|$F/||")"
   else
-    fail=$((fail + 1)); failures+=("$id"); printf '  ✗ %-28s %s\n' "$id" "$out"
+    fail=$((fail + 1)); failures+=("$id"); printf '  ✗ %-28s %s\n' "$id" "$problem"
   fi
 }
 
@@ -86,6 +100,7 @@ run convert.archive.extract "$F/bundle.tar.gz"
 run convert.archive.extract "$F/notes.txt.gz"
 run convert.archive.zip "$F/bundle.tar.gz"
 run convert.archive.tar "$F/bundle.zip"
+run convert.archive.gzip "$F/bundle.zip"
 run archive.zip "$F/folder"
 run archive.tar "$F/folder" "$F/notes.txt"
 run archive.gzip "$F/notes.txt"

@@ -16,15 +16,9 @@ install: app
 	cp -R build/Clementine.app /Applications/
 	open /Applications/Clementine.app
 
+# Every suite runs even if an earlier one fails; a summary at the end, exit 1 if any failed.
 test:
-	scripts/smoke-test.sh
-	scripts/edge-test.sh
-	scripts/stress-test.sh
-	scripts/test-image-editor.sh
-	scripts/test-waveform.sh
-	scripts/test-pdf-metadata.sh
-	scripts/test-productivity.sh
-	scripts/test-lifecycle.sh
+	scripts/run-tests.sh
 
 clean:
 	rm -rf .build build
