@@ -22,6 +22,19 @@ extension UITest {
     /// Return and Esc belong to the naming row while it's open; outside it they still Apply and Cancel.
     private static var presetSheet: Suite {
         Suite(name: "preset sheet") { t in
+            // Suggested names fit a slice's caption without being cut short.
+            let withSettings = ActionRegistry.all.filter { !$0.parameters.isEmpty && $0.editor == nil }
+            let names = withSettings.map { ($0.id, PresetStore.suggestedName(for: $0, values: $0.defaults)) }
+            let long = names.filter { !SliceCaption.fits($0.1) }
+            t.check(long.isEmpty, "suggested preset names fit a slice's caption (too long: \(long))")
+            t.check(names.first { $0.0 == "tool.compress" }?.1 == "Compress · Balanced", "a name that fits keeps its action")
+            if let fit = ActionRegistry.find("tool.fit") {
+                var small = fit.defaults
+                small.storage["megabytes"] = .number(0.05)
+                let name = PresetStore.suggestedName(for: fit, values: small)
+                t.check(name == "0.05 MB", "one too long for a slice drops the action (\(name))")
+            }
+
             isolatedSupport(t) {
                 guard let fit = ActionRegistry.find("tool.fit") else { return t.check(false, "tool.fit exists") }
                 var values = fit.defaults

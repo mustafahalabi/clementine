@@ -3,7 +3,8 @@ import AppKit
 import SwiftUI
 
 extension UITest {
-    /// Settings on a short screen: the window stops at the cap and the tab scrolls under the header.
+    /// Settings on a short screen (the window stops at the cap and the tab scrolls under the header), and the
+    /// parameter sheet's preview and button row.
     static var settings: [Suite] {
         [Suite(name: "settings fit") { t in
             let natural = FirstMouseHostingView(rootView: SettingsView()).fittingSize.height
@@ -26,6 +27,29 @@ extension UITest {
             t.scroll(by: -400, at: t.point(260, cap - 80, in: window), in: window)
             t.check(t.wait(2) { t.frame(id: "settings.toolsFooter", in: window).map { $0.rect.minY >= 0 } ?? false },
                     "…down to the tools footer")
+        },
+        Suite(name: "sheet fit") { t in
+            // A flat picture has no subject: the preview says so instead of spinning forever.
+            let flat = t.scratch.appendingPathComponent("flat.png")
+            if let image = try? ImageEngine.render(width: 320, height: 240, { context in
+                context.setFillColor(CGColor(srgbRed: 0.53, green: 0.6, blue: 0.67, alpha: 1))
+                context.fill(CGRect(x: 0, y: 0, width: 320, height: 240))
+            }), let data = try? ImageEngine.encode(image, format: .png, quality: 1) {
+                try? data.write(to: flat)
+            }
+            guard let cutOut = ActionRegistry.find("tool.image.removebg") else { return t.check(false, "Cut Out Subject exists") }
+            let form = ParameterForm(action: cutOut, urls: [flat], values: cutOut.defaults, onApply: { _ in }, onCancel: {})
+            let window = t.open(form, size: NSSize(width: 440, height: 520))
+            t.check(t.wait(15) { t.frame(id: "param.previewMissing", in: window) != nil }, "Cut Out on a flat picture says no subject was found")
+
+            // Every button in the row is inside the sheet and none overlap.
+            let ids = ["param.savePreset", "param.reset"]
+            let frames = ids.compactMap { t.frame(id: $0, in: window)?.rect }
+            t.check(frames.count == ids.count, "Save as Preset… and Reset are shown")
+            if frames.count == 2 {
+                t.check(frames[0].maxX <= frames[1].minX && frames.allSatisfy { $0.minX >= 0 && $0.maxX <= 440 },
+                        "the button row fits the sheet (\(frames.map { Int($0.width) }))")
+            }
         }]
     }
 }

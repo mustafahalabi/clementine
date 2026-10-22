@@ -140,7 +140,9 @@ final class PresetStore: @unchecked Sendable {
         return result
     }
 
-    /// "Target Size · 10 MB", "Compress · Smallest": the action and what was picked (typed text left out).
+    /// The name Save as Preset… offers: the action and what was picked (typed text left out), cut down until it
+    /// fits a slice's two-line caption, e.g. "Compress · Smallest", or "10 MB" for Target Size.
+    @MainActor
     static func suggestedName(for action: Action, values: ParamValues) -> String {
         let parts = action.parameters.compactMap { parameter -> String? in
             switch parameter.kind {
@@ -150,7 +152,12 @@ final class PresetStore: @unchecked Sendable {
             case .text: return nil
             }
         }
-        return String(([action.title] + parts).joined(separator: " · ").prefix(maxNameLength))
+        let title = action.title
+        func name(_ pieces: [String]) -> String { pieces.joined(separator: " · ") }
+        let candidates = [name([title] + parts), name(parts), name([title] + parts.prefix(1)), name(Array(parts.prefix(1)))]
+            .filter { !$0.isEmpty }
+        let best = candidates.first(where: SliceCaption.fits) ?? candidates.first ?? title
+        return String(best.prefix(maxNameLength))
     }
 
     /// Not localized: the file and the CLI use plain "0.05", whatever the Mac's region.

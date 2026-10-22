@@ -37,6 +37,8 @@ struct ParameterForm: View {
     @State var preview: NSImage?
     /// Bumped per render so the preview crossfades instead of snapping.
     @State private var previewVersion = 0
+    /// The last render gave nothing (e.g. Cut Out on a picture with no subject).
+    @State var previewFailed = false
     /// What's typed in number fields, so values apply on every keystroke (a formatted TextField only commits on Return).
     @State private var numberText: [String: String] = [:]
     @FocusState private var focusedField: String?
@@ -56,7 +58,7 @@ struct ParameterForm: View {
                 .padding(.top, 4)
 
             if showsPreview {
-                PreviewPane(image: preview, version: previewVersion)
+                PreviewPane(image: preview, version: previewVersion, missing: previewFailed ? action.previewMissing : nil)
                     .frame(height: 260)
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
@@ -77,46 +79,11 @@ struct ParameterForm: View {
 
             presetRow
 
-            HStack(spacing: 10) {
-                if presetName == nil {
-                    Button {
-                        presetName = PresetStore.suggestedName(for: action, values: values)
-                        presetNote = nil
-                        DispatchQueue.main.async { focusedField = Self.presetField }
-                    } label: {
-                        Label("Save as Preset…", systemImage: "bookmark")
-                    }
-                    .buttonStyle(SoftButtonStyle())
-                    .disabled(invalidNumber != nil)
-                    .help("Keep these settings as a slice of their own on the wheel")
-                    .uiTestID("param.savePreset")
-                }
-                if action.preview != nil {
-                    Button {
-                        values = action.defaults
-                        numberText = [:]
-                    } label: {
-                        Label("Reset", systemImage: "arrow.counterclockwise")
-                    }
-                    .buttonStyle(SoftButtonStyle())
-                    .disabled(values == action.defaults)
-                }
-                if let invalid = invalidNumber {
-                    Label("\(invalid.label): enter \(invalid.range.lowerBound.formatted())–\(invalid.range.upperBound.formatted())",
-                          systemImage: "exclamationmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(Theme.cherry)
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
-                }
-                Spacer()
-                // While a preset is being named, Return and Esc belong to that row.
-                Button("Cancel", role: .cancel, action: onCancel)
-                    .keyboardShortcut(presetName == nil ? .cancelAction : nil)
-                    .buttonStyle(SoftButtonStyle())
-                Button("Apply") { onApply(values) }
-                    .keyboardShortcut(presetName == nil ? .defaultAction : nil)
-                    .buttonStyle(AccentButtonStyle())
-                    .disabled(invalidNumber != nil)
+            // Buttons never truncate: when the full row doesn't fit (narrow sheet, an error shown), Reset drops
+            // its word and keeps the icon.
+            ViewThatFits(in: .horizontal) {
+                buttonRow(compact: false)
+                buttonRow(compact: true)
             }
             .animation(Theme.snappy, value: invalidNumber?.label)
             .padding([.horizontal, .bottom], 20)
@@ -141,12 +108,68 @@ struct ParameterForm: View {
             let image = await render(urls[0], values)
             if !Task.isCancelled {
                 preview = image
+                previewFailed = image == nil
                 previewVersion += 1
             }
         }
     }
 
     static let presetField = "preset.name"
+
+    private func buttonRow(compact: Bool) -> some View {
+        HStack(spacing: 10) {
+            if presetName == nil {
+                Button {
+                    presetName = PresetStore.suggestedName(for: action, values: values)
+                    presetNote = nil
+                    DispatchQueue.main.async { focusedField = Self.presetField }
+                } label: {
+                    Label("Save as Preset…", systemImage: "bookmark")
+                }
+                .buttonStyle(SoftButtonStyle())
+                .fixedSize()
+                .disabled(invalidNumber != nil)
+                .help("Keep these settings as a slice of their own on the wheel")
+                .uiTestID("param.savePreset")
+            }
+            if action.preview != nil {
+                Button {
+                    values = action.defaults
+                    numberText = [:]
+                } label: {
+                    if compact {
+                        Label("Reset", systemImage: "arrow.counterclockwise").labelStyle(.iconOnly)
+                    } else {
+                        Label("Reset", systemImage: "arrow.counterclockwise")
+                    }
+                }
+                .buttonStyle(SoftButtonStyle())
+                .fixedSize()
+                .disabled(values == action.defaults)
+                .help("Reset to the defaults")
+                .uiTestID("param.reset")
+            }
+            if let invalid = invalidNumber {
+                Label("\(invalid.label): enter \(invalid.range.lowerBound.formatted())–\(invalid.range.upperBound.formatted())",
+                      systemImage: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Theme.cherry)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
+            }
+            Spacer(minLength: 0)
+            // While a preset is being named, Return and Esc belong to that row.
+            Button("Cancel", role: .cancel, action: onCancel)
+                .keyboardShortcut(presetName == nil ? .cancelAction : nil)
+                .buttonStyle(SoftButtonStyle())
+                .fixedSize()
+            Button("Apply") { onApply(values) }
+                .keyboardShortcut(presetName == nil ? .defaultAction : nil)
+                .buttonStyle(AccentButtonStyle())
+                .fixedSize()
+                .disabled(invalidNumber != nil)
+        }
+    }
 
     /// Naming a new preset, or how saving the last one went.
     @ViewBuilder
@@ -292,6 +315,8 @@ struct SheetHeader: View {
 private struct PreviewPane: View {
     let image: NSImage?
     let version: Int
+    /// Says why there's no image, once a render came back empty; nil while the first one is still running.
+    var missing: String? = nil
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -309,6 +334,12 @@ private struct PreviewPane: View {
                     .padding(14)
                     .id(version)
                     .transition(.opacity)
+            } else if let missing {
+                Label(missing, systemImage: "eye.slash")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Theme.secondaryText(scheme))
+                    .transition(.opacity)
+                    .uiTestID("param.previewMissing")
             } else {
                 ProgressView().controlSize(.small)
             }

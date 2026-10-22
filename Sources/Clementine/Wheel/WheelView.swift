@@ -169,6 +169,38 @@ struct Slice: Shape {
     }
 }
 
+/// The caption under a tool's icon on a slice: two lines of small capitals in a narrow column.
+enum SliceCaption {
+    static let size: CGFloat = 9
+    static let tracking: CGFloat = 0.3
+    static let width: CGFloat = 62
+
+    /// Whether `title` fits the caption at full size: measured by SwiftUI with the slice's own text settings,
+    /// it needs no more than two lines and no word is wider than the column (it would be split mid-word).
+    @MainActor
+    static func fits(_ title: String) -> Bool {
+        func height(_ text: String, lines: Int?) -> CGFloat {
+            NSHostingView(rootView: caption(text).lineLimit(lines).frame(width: 1000).fixedSize()).fittingSize.height
+        }
+        func measured(_ word: String) -> CGFloat {
+            NSHostingView(rootView: caption(word).fixedSize()).fittingSize.width
+        }
+        let one = height("A", lines: 1)
+        let words = title.split(separator: " ").map(String.init)
+        guard words.allSatisfy({ measured($0) <= width }) else { return false }
+        let wrapped = NSHostingView(rootView: caption(title).frame(width: width).fixedSize(horizontal: false, vertical: true)).fittingSize.height
+        return wrapped <= one * 2 + 1
+    }
+
+    /// The caption text as a slice draws it (shared with `SliceLabel`, so measuring matches what's shown).
+    static func caption(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: size, weight: .bold, design: .rounded))
+            .tracking(tracking)
+            .multilineTextAlignment(.center)
+    }
+}
+
 private struct SliceLabel: View {
     let action: Action
     let mode: WheelMode
@@ -200,14 +232,12 @@ private struct SliceLabel: View {
                                     .allowsHitTesting(false)
                             }
                         }
-                    Text(action.title.uppercased())
-                        .font(.system(size: 9, weight: .bold, design: .rounded)) // was 8.5; long names wrap
-                        .tracking(0.3)
-                        .multilineTextAlignment(.center)
+                    SliceCaption.caption(action.title) // 9 pt (was 8.5); long names wrap
                         .lineLimit(2)
+                        .minimumScaleFactor(0.8) // a long preset name shrinks a little before it's cut short
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(width: 62) // narrow enough to stay inside the slice when the hover scales it up
+                .frame(width: SliceCaption.width) // narrow enough to stay inside the slice when the hover scales it up
             }
         }
         .foregroundStyle(hovered ? Color.white : (scheme == .dark ? Color(hex: 0xF4E9DF) : Color(hex: 0x4A3628)))

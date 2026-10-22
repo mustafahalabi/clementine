@@ -106,6 +106,7 @@ enum ToolActions {
                preview: { url, params in
                    ImageTools.preview(url) { try BackgroundRemover.cutOut($0, crop: params.choice("crop") == 1) }
                },
+               previewMissing: "No subject found",
                accepts: { $0.kind == .image && $0.ext != "svg" },
                run: { ctx in .files([try await BackgroundRemover.removeBackground(ctx.input, format: ctx.params.choice("format"),
                                                                                   crop: ctx.params.choice("crop") == 1)]) }),

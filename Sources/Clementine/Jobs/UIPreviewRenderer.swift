@@ -176,6 +176,19 @@ enum UIPreview {
                                      onApply: { _ in }, onCancel: {}, presetName: PresetStore.suggestedName(for: fit, values: values))
             snapshotWindow(NSHostingController(rootView: form), appearance: appearance, to: out("parameters-save-preset"))
         }
+        // The image tools wheel at full size, with whatever presets there are, to check their captions fit.
+        let presets = PresetStore.shared.actions().map(\.action)
+        if !presets.isEmpty {
+            let model = WheelModel()
+            let tools = ActionRegistry.catalog(.tools).filter { action in
+                action.isPreset || action.accepts(FileItem(url: URL(fileURLWithPath: "/tmp/photo.png")))
+            }
+            let images = WheelCatalog.groups[0]
+            model.preview(actions: Array(tools.prefix(ActionRegistry.maxSlices)), mode: .tools, icon: images.icon,
+                          summary: images.title, replay: false)
+            let wheel = WheelView(model: model).padding(30).background(WindowBackdrop())
+            snapshotWindow(NSHostingController(rootView: wheel), appearance: appearance, settle: 1.2, to: out("wheel-presets"))
+        }
         let files = WheelSettingsView(kind: "image", mode: .files).scrollDisabled(true).fixedSize(horizontal: false, vertical: true).frame(width: 520).background(WindowBackdrop()).tint(Theme.tangerine)
         snapshotWindow(NSHostingController(rootView: files), appearance: appearance, settle: 1.6, to: out("settings-wheel-files"))
     }
