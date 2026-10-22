@@ -25,14 +25,15 @@ for candidate in "$APP_FFMPEG" vendor/bin/ffmpeg "$(command -v ffmpeg)"; do
   if [[ -x "$candidate" ]] && has_zscale "$candidate"; then HDRFF="$candidate"; break; fi
 done
 hdr_fixture() { # <transfer> <file>
+  # Near-lossless, so Compress has something to shrink (it keeps the original when it can't).
   if [[ -n "$HDRFF" ]]; then
     "$HDRFF" -loglevel error -y -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=r=48000 -t 2 \
       -vf "zscale=tin=bt709:pin=bt709:min=bt709:t=$1:p=bt2020:m=bt2020nc:npl=100,format=yuv420p10le" \
-      -c:v libx265 -x265-params "log-level=error:colorprim=bt2020:transfer=$1:colormatrix=bt2020nc" -tag:v hvc1 \
+      -c:v libx265 -x265-params "log-level=error:crf=6:colorprim=bt2020:transfer=$1:colormatrix=bt2020nc" -tag:v hvc1 \
       -color_primaries bt2020 -color_trc "$1" -colorspace bt2020nc -c:a aac "$2"
   else
     q -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=r=48000 -t 2 -pix_fmt yuv420p10le \
-      -c:v libx265 -x265-params "log-level=error" -tag:v hvc1 -color_primaries bt2020 -color_trc "$1" -colorspace bt2020nc \
+      -c:v libx265 -x265-params "log-level=error:crf=6" -tag:v hvc1 -color_primaries bt2020 -color_trc "$1" -colorspace bt2020nc \
       -c:a aac "$2"
   fi
 }
