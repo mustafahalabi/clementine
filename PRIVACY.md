@@ -38,8 +38,20 @@ All of it stays on your Mac, in your user account:
 | Settings, hidden wheel slices, and how often you use each action (to order the wheel) | `~/Library/Preferences/app.clementine.Clementine.plist` |
 | History of the last 50 jobs that made files (action, input and output paths), used for Undo | `~/Library/Application Support/Clementine/history.json` |
 | Errors writing that history | the macOS unified log (Console.app), on this Mac only |
+| Folders where a conversion is writing its result, so files left by a crash can be cleaned up at the next launch (entries are removed once nothing is left there) | `~/Library/Application Support/Clementine/in-progress` |
 
-**Clear History** in the menu empties `history.json`. Deleting those two files and the app removes everything
+While a result is being written it has a hidden name starting with `.clementine-` in the same folder; it gets its
+real name once it's complete. If Clementine is killed mid-way, the next launch deletes that hidden file (only in
+folders listed in `in-progress`, never anywhere else).
+
+**Clear History** in the menu empties `history.json`. Deleting those files and the app removes everything
 Clementine keeps.
+
+## Notifications
+
+When an automatic update check finds a new version, Clementine posts one notification about it. It uses
+provisional authorization, so macOS delivers it quietly to Notification Center without asking for permission
+first; you can turn it off or allow banners in System Settings › Notifications › Clementine. The notification is
+created and removed on your Mac; nothing is sent anywhere.
 
 Questions: open an issue at https://github.com/mustafahalabi/clementine/issues.

@@ -45,8 +45,6 @@ Known issues and loose ends (none block use):
 
 - The CLI enforces choices and slider ranges but not typed-number ranges; engines report those (e.g. Split's
   1-second minimum).
-- Outputs are written in place, not to a temp name renamed at the end: quit/interrupt clean up, but a crash of
-  Clementine itself can leave a partial file.
 - `hasSeenOnboarding` and `@AppStorage` values use `UserDefaults.standard`, so `CLEMENTINE_DEFAULTS_SUITE` doesn't
   isolate them in tests.
 - `--undo` moves files to the real Trash even when `CLEMENTINE_SUPPORT_DIR` is set.
@@ -54,8 +52,6 @@ Known issues and loose ends (none block use):
   app. Unclear whether this only happens with synthetic input.
 - Waveform editors show no filmstrip for MKV/WebM; Split cuts on keyframes; DOCX → PDF drops images; RAR can't be
   created. (Also listed in README › Known limits.)
-- Sparkle logs that a background (menu bar) app should implement "gentle reminders" for update alerts; not done
-  yet, so with automatic updates off an update alert can appear behind other apps.
 - Few app controls carry `.uiTestID` tags yet, so `make ui-test` mostly covers the harness and the midline
   regression. Tag controls as you write suites for them.
 
