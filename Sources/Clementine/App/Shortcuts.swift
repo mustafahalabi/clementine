@@ -101,6 +101,8 @@ enum ShortcutRunner {
             switch outcome.result {
             case .success(.files(let urls)): return urls.map { .file($0) }
             case .success(.text(let title, let body)): return [.text(title: title, body: body)]
+            // Compress kept the original: hand it on so the rest of the shortcut still gets a file.
+            case .success(.unchanged): return outcome.unit.map { .file($0) }
             case .failure: return []
             }
         }

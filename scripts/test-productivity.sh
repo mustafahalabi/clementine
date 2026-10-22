@@ -106,6 +106,11 @@ OUT="$(CLEMENTINE_TRACE_CONCURRENCY=1 "$BIN" --run convert.image.jpeg "${IMAGES[
 check "all ${#IMAGES[@]} outputs exist" '[[ $(echo "$OUT" | wc -l) -eq ${#IMAGES[@]} ]] && echo "$OUT" | while read -r f; do [[ -s "$f" ]] || exit 1; done'
 check "outputs printed in input order" '[[ "$(echo "$OUT" | xargs -n1 basename | sed "s/\.jpg$//" | joined)" == "$(printf "%s\n" "${IMAGES[@]}" | xargs -n1 basename | sed "s/\.png$//" | joined)" ]]'
 check "images run several at once (limit = cores/2)" '(( CORES < 4 )) || grep -q "concurrency: [2-9][0-9]* of $((CORES / 2)) for ${#IMAGES[@]}" "$TRACE"'
+# Each 900×600 image weighs 900 × 600 × 4 × 3 ≈ 6.5 MB against the shared memory budget.
+OUT="$(CLEMENTINE_MEMORY_BUDGET_MB=7 CLEMENTINE_TRACE_CONCURRENCY=1 "$BIN" --run convert.image.bmp "${IMAGES[@]:0:6}" 2>"$TRACE")"
+check "a tight memory budget runs big images one at a time" '[[ $(echo "$OUT" | wc -l) -eq 6 ]] && grep -q "concurrency: 1 of" "$TRACE"'
+OUT="$(CLEMENTINE_MEMORY_BUDGET_MB=14 CLEMENTINE_TRACE_CONCURRENCY=1 "$BIN" --run convert.image.tiff "${IMAGES[@]:0:6}" 2>"$TRACE")"
+check "…and two at a time when two fit" '(( CORES < 4 )) || grep -q "concurrency: 2 of" "$TRACE"'
 OUT="$("$BIN" --run convert.image.webp "$F/batch/img01.png" "$F/batch/img08b.png" "$F/batch/img09.png" 2>"$WORK/err.txt")"; STATUS=$?
 check "one bad file fails the run" '[[ $STATUS -eq 1 ]] && grep -q "img08b.png" "$WORK/err.txt"'
 check "…but the others still finish, in order" '[[ "$(echo "$OUT" | xargs -n1 basename | joined)" == "img01.webp img09.webp" ]]'

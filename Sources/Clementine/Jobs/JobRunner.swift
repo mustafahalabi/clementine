@@ -102,15 +102,27 @@ final class JobRunner {
                     }
                 }
             }
+            let note = Self.note(for: report, units: count)
+            if let note { job.detail = note }
             if report.failures.isEmpty {
                 job.progress = 1
                 job.state = .done
-                // Long enough to reach Undo; hovering the card keeps it open.
-                panel.close(after: job.undo == nil ? 1.2 : 5)
+                // Long enough to reach Undo (or read why nothing was written); hovering the card keeps it open.
+                panel.close(after: job.undo != nil ? 5 : note != nil ? 4 : 1.2)
             } else {
                 job.state = .failed(report.failures.map(\.message).joined(separator: "\n"))
             }
         }
+    }
+
+    /// What the card says when some units deliberately wrote nothing (Compress keeping a smaller original).
+    static func note(for report: BatchReport, units: Int) -> String? {
+        guard let first = report.notes.first else { return nil }
+        if units == 1 { return first.message }
+        let kept = report.notes.count
+        if kept == units { return "All \(kept) were already as small as they get — originals kept." }
+        return kept == 1 ? "1 was already as small as it gets — original kept."
+                         : "\(kept) were already as small as they get — originals kept."
     }
 
     /// Cancels every running job and waits (bounded) for its tools to stop and partial outputs to be deleted.

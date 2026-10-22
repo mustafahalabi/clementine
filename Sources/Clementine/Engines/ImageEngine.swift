@@ -1,3 +1,4 @@
+import Accelerate
 import AppKit
 import ImageIO
 import PDFKit
@@ -144,7 +145,7 @@ enum ImageEngine {
             case .webp:
                 try await writeWebP(image, to: url, quality: quality)
             case .pdf:
-                try writePDF([image], to: url)
+                try writePDF(image, to: url)
             default:
                 try encode(image, format: format, quality: quality, properties: properties).write(to: url)
             }
@@ -176,14 +177,104 @@ enum ImageEngine {
         try await ProcessRunner.run(cwebp, ["-quiet", "-q", String(Int(quality * 100)), "-metadata", "icc", temp.path, "-o", url.path])
     }
 
-    static func writePDF(_ images: [CGImage], to url: URL) throws {
-        let document = PDFDocument()
-        for image in images {
-            let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-            guard let page = PDFPage(image: nsImage) else { throw ClementineError.message("Couldn't build a PDF page.") }
-            document.insert(page, at: document.pageCount)
+    // MARK: PDF
+
+    /// Pages are at most A4's long edge (11.69 in). Photos declare 72 dpi or nothing, which would otherwise make a
+    /// 12 MP photo a 56 × 42 in page.
+    static let maxPageEdge: CGFloat = 842
+    /// Past this density extra pixels don't show on paper, so bigger images are decoded smaller.
+    static let maxPageDPI: CGFloat = 400
+
+    /// One page per image, streamed: each image is decoded, written and released before the next, so memory stays
+    /// flat whatever the count. JPEGs that are upright and not oversized go in as they are, without re-encoding.
+    static func writePDF(_ inputs: [URL], to url: URL) throws {
+        let writer = try ImagePDFWriter(url: url)
+        for input in inputs {
+            try Task.checkCancellation()
+            try autoreleasepool {
+                let page = try pdfPage(input)
+                try writer.addPage(page.image, size: page.size)
+            }
         }
-        guard document.write(to: url) else { throw ClementineError.message("Couldn't write \(url.lastPathComponent).") }
+        try writer.finish()
+    }
+
+    static func writePDF(_ image: CGImage, to url: URL) throws {
+        let writer = try ImagePDFWriter(url: url)
+        try writer.addPage(try pdfImage(image), size: pageSize(width: image.width, height: image.height, dpi: 72))
+        try writer.finish()
+    }
+
+    /// Page size in points for an upright image: its own dpi when it declares a real one (scans), shrunk to fit
+    /// `maxPageEdge`.
+    private static func pageSize(width: Int, height: Int, dpi declared: CGFloat) -> CGSize {
+        let dpi = max(declared > 72 ? declared : 72, CGFloat(max(width, height)) * 72 / maxPageEdge)
+        return CGSize(width: CGFloat(width) * 72 / dpi, height: CGFloat(height) * 72 / dpi)
+    }
+
+    private static func pdfPage(_ input: URL) throws -> (image: ImagePDFWriter.Image, size: CGSize) {
+        let source = CGImageSourceCreateWithURL(input as CFURL, nil)
+        let properties = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] } ?? [:]
+        var width = properties[kCGImagePropertyPixelWidth] as? Int ?? 0
+        var height = properties[kCGImagePropertyPixelHeight] as? Int ?? 0
+        let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
+        if orientation >= 5 { swap(&width, &height) }
+
+        guard width > 0, height > 0 else {
+            // SVG and anything else ImageIO can't size up front.
+            let image = try load(input).image
+            return (try pdfImage(image), pageSize(width: image.width, height: image.height, dpi: 72))
+        }
+        let page = pageSize(width: width, height: height, dpi: CGFloat(properties[kCGImagePropertyDPIWidth] as? Double ?? 72))
+        let maxPixel = Int((max(page.width, page.height) / 72 * maxPageDPI).rounded())
+        let model = properties[kCGImagePropertyColorModel] as? String
+        if ImageFormat(ext: input.pathExtension) == .jpeg, orientation == 1, max(width, height) <= maxPixel,
+           model == (kCGImagePropertyColorModelRGB as String) || model == (kCGImagePropertyColorModelGray as String),
+           properties[kCGImagePropertyDepth] as? Int ?? 8 == 8,
+           let jpeg = try? Data(contentsOf: input, options: .mappedIfSafe) {
+            // Embedded byte for byte; only the color space is read, the pixels are never decoded.
+            let space = source.flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }?.colorSpace
+            let gray = model == (kCGImagePropertyColorModelGray as String)
+            return (ImagePDFWriter.Image(jpeg: jpeg, width: width, height: height, components: gray ? 1 : 3,
+                                         icc: space?.copyICCData() as Data?, alpha: nil), page)
+        }
+        return (try pdfImage(try load(input, maxPixel: maxPixel).image), page)
+    }
+
+    /// Re-encodes decoded pixels for a PDF page: color as JPEG, transparency as a separate mask.
+    private static func pdfImage(_ image: CGImage) throws -> ImagePDFWriter.Image {
+        guard image.hasAlpha else {
+            let color = try flatten(image)
+            return ImagePDFWriter.Image(jpeg: try encode(color, format: .jpeg, quality: 0.9), width: color.width, height: color.height,
+                                        components: 3, icc: color.colorSpace?.copyICCData() as Data?, alpha: nil)
+        }
+        // The mask is applied by the viewer, so the color must be un-premultiplied (not flattened onto white).
+        let width = image.width, height = image.height
+        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        var pixels = Data(count: width * height * 4)
+        var alpha = Data(count: width * height)
+        let color: CGImage? = try pixels.withUnsafeMutableBytes { rgba in
+            guard let context = CGContext(data: rgba.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                throw ClementineError.message("Couldn't allocate a \(width)×\(height) image.")
+            }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            var buffer = vImage_Buffer(data: rgba.baseAddress, height: vImagePixelCount(height), width: vImagePixelCount(width), rowBytes: width * 4)
+            vImageUnpremultiplyData_RGBA8888(&buffer, &buffer, vImage_Flags(kvImageNoFlags))
+            alpha.withUnsafeMutableBytes { mask in
+                var plane = vImage_Buffer(data: mask.baseAddress, height: vImagePixelCount(height), width: vImagePixelCount(width), rowBytes: width)
+                // Channel 3 of RGBA is alpha.
+                _ = vImageExtractChannel_ARGB8888(&buffer, &plane, 3, vImage_Flags(kvImageNoFlags))
+            }
+            // The same bytes read as opaque RGB: the alpha byte is skipped.
+            guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+            return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4, space: space,
+                           bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue), provider: provider,
+                           decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        }
+        guard let color else { throw ClementineError.message("Couldn't render the image.") }
+        return ImagePDFWriter.Image(jpeg: try encode(color, format: .jpeg, quality: 0.9), width: width, height: height,
+                                    components: 3, icc: space.copyICCData() as Data?, alpha: alpha)
     }
 
     // MARK: Animation
@@ -360,6 +451,11 @@ enum ImageEngine {
             let animation = try loadAnimation(input)
             let output = Output.file(beside: input, ext: format.ext)
             try await writeAnimation(animation, to: output, format: format)
+            return output
+        }
+        if format == .pdf {
+            let output = Output.file(beside: input, ext: "pdf")
+            try await Output.produce(output) { try writePDF([input], to: output) }
             return output
         }
         let loaded = try load(input)

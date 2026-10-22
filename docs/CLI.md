@@ -85,6 +85,9 @@ Compress and Target Size always use x264, which makes smaller files at the same 
 document work, at most 2 when any input is audio/video (ffmpeg is already multithreaded), and an action's own
 `maxConcurrent` if it has one (`convert.image.mp4` = 2). Batch actions (`batch: yes` below) run once with every
 file. Output names are reserved while a batch runs, so `dup.png` + `dup.bmp` → JPG gives `dup.jpg` and `dup 2.jpg`.
+Image units also share a memory budget across every running batch (a quarter of RAM, 1–6 GB): each weighs its
+largest image's decoded size × 3, read from the file header, so big images run fewer at a time and one larger than
+the whole budget runs alone.
 `CLEMENTINE_TRACE_CONCURRENCY=1` (debug builds) prints `concurrency: <peak> of <limit> for <n> units` to stderr.
 
 **Output.** Printed after everything has finished, in input order (not finish order):
@@ -92,7 +95,10 @@ file. Output names are reserved while a batch runs, so `dup.png` + `dup.bmp` →
 - files: one absolute path per line on stdout (a folder path for multi-file results such as Split, PDF → PNG
   with several pages, or 10 snapshots);
 - text results (Read QR, Metadata without `fields`): `== <file name> ==` followed by the body on stdout;
-- failures: `error: <file name>: <message>` on stderr. Other files still finish.
+- failures: `error: <file name>: <message>` on stderr. Other files still finish;
+- nothing written on purpose: `kept: <file name>: <message>` on stderr, no path on stdout, and it counts as
+  success. Compress (`tool.compress`, `tool.pdf.compress`) does this when its result isn't smaller than the
+  original: the result is deleted and the message is "Already as small as it gets — kept the original."
 
 Outputs go next to the input and never overwrite: `photo.jpg`, `photo (compressed).jpg`, `photo (compressed) 2.jpg`.
 Names differing only by case count as clashes, so `Clip.mov` + `clip.ts` → MP4 give `Clip.mp4` and `clip 2.mp4`.
@@ -113,7 +119,7 @@ files", see `pmset -g assertions`) so the Mac doesn't idle to sleep mid-encode.
 
 | Code | Meaning |
 |---|---|
-| 0 | Every file succeeded (a text result like "No QR code … found" counts as success) |
+| 0 | Every file succeeded (a text result like "No QR code … found", or Compress keeping the original, counts as success) |
 | 1 | At least one file failed (including a tool that crashed or was killed from outside), or `--undo` had nothing to undo |
 | 2 | Usage error: unknown action id (usage printed on stdout), unknown parameter or option, a `--set` value that doesn't fit the parameter, fewer files than the action's minimum (`<id> needs at least N files`), a `--render-wheel` without its arguments or with `--hover` not followed by a number |
 | 128 + n | Interrupted by signal n: 130 for SIGINT (Ctrl-C), 143 for SIGTERM, 129 for SIGHUP |
@@ -202,6 +208,7 @@ build/Clementine.app/Contents/MacOS/Clementine --demo-wheel --tools --hover 2 ~/
 | `CLEMENTINE_DEFAULTS_SUITE=<suite>` | Uses that UserDefaults suite instead of the app's domain (hidden slices, usage, `orderByUsage`, settings). The bundle reads `app.clementine.Clementine`. The unbundled binary otherwise uses `~/Library/Preferences/Clementine.plist`. |
 | `CLEMENTINE_SUPPORT_DIR=<dir>` | Replaces `~/Library/Application Support/Clementine` (where `history.json` lives) |
 | `CLEMENTINE_TRACE_CONCURRENCY=1` | Logs batch concurrency to stderr (see above) |
+| `CLEMENTINE_MEMORY_BUDGET_MB=<n>` | Replaces the image memory budget for parallel units (see Batches) |
 
 Use the first two whenever you `--record`, `--undo` or change defaults in tests, so real settings and history
 stay untouched. `scripts/test-productivity.sh` does this. Note that `--undo` still uses the real Trash.
@@ -291,8 +298,8 @@ Listed in wheel order. *Editor* means the app opens a custom window, which produ
 
 | id | title | accepts | inputs | batch | parameters |
 |---|---|---|---|---|---|
-| `tool.compress` | Compress | image, video, audio | 1+ | no | `level` (choice) 1: 0 Best quality, 1 Balanced, 2 Smallest |
-| `tool.pdf.compress` | Compress | pdf | 1+ | no | none |
+| `tool.compress` | Compress | image, video, audio | 1+ | no | `level` (choice) 1: 0 Best quality, 1 Balanced, 2 Smallest. Keeps the original (`kept:`) if the result isn't smaller. |
+| `tool.pdf.compress` | Compress | pdf | 1+ | no | none. Keeps the original (`kept:`) if the result isn't smaller. |
 | `tool.fit` | Target Size | image, video, audio | 1+ | no | `megabytes` (number, MB) 5, range 0.05–4000 |
 | `tool.image.resize` | Resize | image | 1+ | no | `size` (choice) 1: 0 75%, 1 50%, 2 25%, 3 Max 3840 px, 4 Max 1920 px, 5 Max 1280 px |
 | `tool.image.crop` | Crop (editor) | image | 1+ | no | `crop` (text, JSON) empty; `aspect` (choice) 0: 0 Square 1:1, 1 4:5, 2 4:3, 3 3:2, 4 16:9, 5 9:16. With `crop` empty, it crops centered to `aspect`. |
@@ -304,7 +311,7 @@ Listed in wheel order. *Editor* means the app opens a custom window, which produ
 | `tool.image.removebg` | Cut Out Subject (live preview) | image except svg | 1+ | no | `format` (choice) 0: 0 PNG, 1 HEIC, 2 WebP (all keep transparency; WebP needs `cwebp`); `crop` (choice) 0: 0 Off, 1 On (crop to the subject). Vision subject lifting, on-device; fails with "No subject found" when there's nothing to lift. Output `<name> (cut out).<ext>`. |
 | `tool.image.qr` | Read QR | image | 1+ | no | none. Text result. |
 | `tool.image.collage` | Collage | image | 2+ | **yes** | `layout` (choice) 0: 0 Grid, 1 Row, 2 Column |
-| `tool.image.pdf` | Make PDF | image | 2+ | **yes** | none |
+| `tool.image.pdf` | Make PDF | image | 2+ | **yes** | none. One page per image, written one at a time. Page size: the image's own dpi if it declares more than 72, scaled down to fit 842 pt (A4's long edge). Upright RGB/gray JPEGs are embedded as-is; other images (and ones over 400 dpi on the page, which are downscaled) are re-encoded as JPEG 0.9, with transparency kept as a mask. `convert.image.pdf` makes the same kind of page. |
 | `tool.media.trim` | Trim (editor) | video, audio | 1+ | no | `start` (text, time) `0:00`; `end` (text, time) empty = end of file |
 | `tool.media.speed` | Speed | video, audio | 1+ | no | `speed` (choice) 5: 0 0.25×, 1 0.5×, 2 0.75×, 3 1.25×, 4 1.5×, 5 2×, 6 3×, 7 4× |
 | `tool.media.split` | Split | video, audio | 1+ | no | `seconds` (number, sec) 60, range 1–36000. Copies streams, so cuts land on keyframes. |

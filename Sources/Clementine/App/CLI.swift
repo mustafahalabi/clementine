@@ -127,6 +127,10 @@ enum CLI {
                 switch result {
                 case .success(.files(let outputs)): outputs.forEach { print($0.path) }
                 case .success(.text(let title, let body)): print("== \(title) ==\n\(body)")
+                case .success(.unchanged(let message)):
+                    // stderr, so stdout stays a list of output paths; not an error (exit status stays 0).
+                    fflush(stdout)
+                    fputs("kept: \(unit[0].lastPathComponent): \(message)\n", stderr)
                 case .failure(is CancellationError) where report.cancelled:
                     fflush(stdout)
                     fputs("cancelled: \(unit[0].lastPathComponent)\n", stderr)
