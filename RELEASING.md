@@ -3,7 +3,26 @@
 A release is a Developer ID–signed, notarized `Clementine.app`, shipped as a `.dmg` (for people) and a `.zip`
 (for Sparkle), plus an `appcast.xml` that existing installs poll for updates.
 
-## One-time setup
+## This project's setup (done)
+
+Everything below is already in place on the Mac mini that builds releases:
+
+| What | Where |
+| --- | --- |
+| Signing identity | login keychain: `Developer ID Application: mustafa halabi (Y48JH8HQ3P)` |
+| Notary credentials | keychain profile `agents-island` (shared with the Agents Island project) |
+| Sparkle private key | login keychain, default `ed25519` account (shared with Agents Island; public key `56YNaECF…ROJKo=` is in `Resources/Info.plist` and `agents-island/assets/sparkle-public-key.txt`) |
+| Update feed | `https://github.com/mustafahalabi/clementine/releases/latest/download/appcast.xml` |
+
+Because the Sparkle key is shared, a leak would affect both apps' updates. To give Clementine its own key, run
+`generate_keys --account clementine`, put the new public key in `Info.plist`, and pass `--account clementine` to
+`generate_appcast`/`sign_update`. Do this before many people install, because installed copies only trust the key
+they shipped with.
+
+v0.1.0 (2026-10-22) was built this way: notarization status *Accepted*, Gatekeeper reports "Notarized Developer ID"
+for the app and the DMG, the bundled tools ran from the notarized app, and an installed copy checked the live feed.
+
+## One-time setup (for a new machine or maintainer)
 
 ### 1. Developer ID certificate
 
@@ -50,8 +69,8 @@ installs can never be updated again**; if it leaks, anyone can ship them an upda
 2. **Build, sign, notarize, package:**
 
    ```sh
-   CODESIGN_IDENTITY="Developer ID Application: Mustafa Halabi (ABCDE12345)" \
-   NOTARY_PROFILE=clementine-notary \
+   CODESIGN_IDENTITY="Developer ID Application: mustafa halabi (Y48JH8HQ3P)" \
+   NOTARY_PROFILE=agents-island \
    scripts/release.sh            # UNIVERSAL=1 for an Intel + Apple silicon build
    ```
 
@@ -104,7 +123,17 @@ installs can never be updated again**; if it leaks, anyone can ship them an upda
    appcast** (not just the new item). Mark pre-releases as such on GitHub so `latest` keeps pointing at the stable
    one.
 
-5. **Check it:** on another Mac (or a fresh user account) open the DMG, drag Clementine to Applications and
+5. **Check it** (what was run for v0.1.0):
+
+   ```sh
+   ditto -x -k dist/Clementine-0.2.0.zip /tmp/check && spctl -a -vvv -t exec /tmp/check/Clementine.app   # Notarized Developer ID
+   xcrun stapler validate /tmp/check/Clementine.app
+   spctl -a -vvv -t open --context context:primary-signature dist/Clementine-0.2.0.dmg
+   /tmp/check/Clementine.app/Contents/MacOS/Clementine --run convert.media.mp3 some.m4a   # bundled ffmpeg works
+   curl -sIL https://github.com/mustafahalabi/clementine/releases/latest/download/appcast.xml | head -1  # 200
+   ```
+
+   Then, on another Mac (or a fresh user account) open the DMG, drag Clementine to Applications and
    launch it; Gatekeeper shouldn't complain (`spctl -a -vv /Applications/Clementine.app` says
    "Notarized Developer ID"). Then install the previous version and use "Check for Updates…".
 
