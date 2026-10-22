@@ -6,7 +6,7 @@ for every run. Editors and other UI are covered by an off-screen interaction har
 off-screen renders. A short manual checklist covers what only a real Mac session can confirm.
 
 ```sh
-make test       # all seven shell suites, in order (stops at the first failing suite)
+make test       # all eight shell suites, in order (stops at the first failing suite)
 make ui-test    # swift build + .build/debug/Clementine --ui-test
 ```
 
@@ -25,8 +25,9 @@ build for the env-var overrides and `--render-ui`, which is what `swift build` (
 | `test-waveform.sh` | Channels (layouts, gains, RMS levels per channel, 5.1), Bleep on audio and video (picture copied, tone inside/silence outside, codecs), Trim with editor-style ms times, and `--render-ui` of the Trim/Bleep/Channels editors in light and dark. | 32 | ~75 s (≈65 s is `--render-ui`) |
 | `test-pdf-metadata.sh` | Page specs (`3r90`, `r-90`, bare `r90`, duplicates, `1:` prefix, rotation adding up) and merge specs (`2:1-3`, cross-file numbering, error wording). Metadata writers for JPG/PNG/HEIC, MP3/M4A/Opus/FLAC/MOV and PDF: round-trips, clearing, no re-encoding, date/year/track/rating validation. | 70 | ~9 s |
 | `test-productivity.sh` | Wheel ordering from `--record`ed usage (per kind and mode, `orderByUsage` off), hidden slices, history (JSON, 50 cap, order, undo, skip-gone, clear), parallel batches (order, concurrency limits via `CLEMENTINE_TRACE_CONCURRENCY`, collision-free names, partial failure exit 1). Uses a scratch defaults suite and support dir. | 34 | ~6 s |
+| `test-lifecycle.sh` | Process lifecycle: SIGINT/SIGTERM/SIGHUP during a long encode (exit 128 + n, ffmpeg gone, no output or partial left, power assertion held), a tool that ignores SIGTERM (SIGKILL after the grace period), a second signal, fake tools that crash, get killed or exit 255 by themselves (failures, exit 1), and `--set`/`--hover` validation (exit 2). Fake tools go in through the `toolsDirectory` setting in a scratch defaults suite. | 50 | ~30 s |
 
-\* Measured on an M4 Pro (12 cores), macOS 26.1, ffmpeg 8.1, warm build: 532 checks, about 2.5 minutes in total. Counts
+\* Measured on an M4 Pro (12 cores), macOS 26.1, ffmpeg 8.1, warm build: 582 checks, about 3 minutes in total. Counts
 are the `N passed` line of each suite, so they change as cases are added.
 
 **Running.** Each script builds first (`swift build -q`; stress-test retries the build up to 5 times), then runs
@@ -76,7 +77,7 @@ per ref; newer pushes cancel older runs). Steps: print toolchain, cache SwiftPM,
 `swift build`, **`smoke-test.sh`**, **`edge-test.sh`**, then `scripts/bundle.sh debug` and run the bundled binary's
 `--help` to prove Sparkle embeds and links.
 
-CI does **not** run stress, image-editor, waveform, pdf-metadata, productivity or `--ui-test` (the UI harness
+CI does **not** run stress, image-editor, waveform, pdf-metadata, productivity, lifecycle or `--ui-test` (the UI harness
 needs a logged-in GUI session). Run `make test` and `make ui-test` locally before merging changes in those areas.
 
 ## UI tests (`--ui-test`)
@@ -91,8 +92,10 @@ make ui-test                              # every suite
 ```
 
 Output is one line per suite, `✓`/`✗` per check, then `N passed, M failed` (exit 0/1). Current suites: `harness`
-(proves a button press, a drag and typing reach SwiftUI) and `midline` (clicks on a control's exact center land,
-across button styles and the chip picker): 11 checks, about 15 s.
+(proves a button press, a drag and typing reach SwiftUI), `midline` (clicks on a control's exact center land,
+across button styles and the chip picker) and `lifecycle quit` (a running encode stopped the way quitting stops
+it: no tool, job or partial output left; it runs last because it refuses tool launches afterwards): 18 checks,
+about 25 s.
 
 **Writing a suite.** Add a file in `Sources/Clementine/Testing/` that extends `UITest` with
 `static var <area>: [Suite]`, and append it to `UITest.all` (kept sorted by area).

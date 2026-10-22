@@ -33,6 +33,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HistoryStore.shared.startClock()
         OnboardingWindow.showIfFirstLaunch()
     }
+
+    /// Running jobs' tools would outlive the app (they're in their own process group) and leave half-written
+    /// files, so stop them and let them clean up before quitting.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !JobRunner.shared.running.isEmpty || ProcessRunner.runningCount > 0 else { return .terminateNow }
+        Task { @MainActor in
+            await JobRunner.shared.stopAll()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
 }
 
 private struct MenuContent: View {
