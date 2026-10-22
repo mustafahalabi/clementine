@@ -415,8 +415,10 @@ private struct PresetsSection: View {
                 .foregroundStyle(problem != nil ? AnyShapeStyle(Theme.cherryText) : AnyShapeStyle(Theme.accent))
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
+                // Only typing makes a draft: when the field loses focus, SwiftUI writes its pre-commit text back
+                // through the binding after `commit` ran, which would bring the old name back as a draft.
                 TextField("Name", text: Binding(get: { drafts[preset.id] ?? preset.name },
-                                                set: { drafts[preset.id] = $0 }))
+                                                set: { if focused == preset.id { drafts[preset.id] = $0 } }))
                     .textFieldStyle(.plain)
                     .labelsHidden()
                     .font(.system(size: 12.5, weight: .medium))
