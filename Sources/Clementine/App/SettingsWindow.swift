@@ -92,6 +92,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.revealKey) private var reveal = true
     @AppStorage(Prefs.qualityKey) private var quality = 0.85
     @AppStorage(Prefs.toolsDirectoryKey) private var toolsDirectory = ""
+    @AppStorage(Prefs.hardwareEncodingKey) private var hardwareEncoding = true
     @State private var launchAtLogin = LaunchAtLogin.isOn
     @State private var loginError: String?
 
@@ -147,6 +148,17 @@ struct SettingsView: View {
                         Text("\(Int(quality * 100))%").monospacedDigit().frame(width: 40, alignment: .trailing)
                     }
                 }
+            }
+
+            Section {
+                Toggle("Use hardware encoding", isOn: $hardwareEncoding)
+                    .uiTestID("settings.hardwareEncoding")
+            } header: {
+                Text("Video")
+            } footer: {
+                Text("H.264 and HEVC encode on the Mac's media engine: much faster, slightly larger files. Compress always uses the smaller software encoder.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

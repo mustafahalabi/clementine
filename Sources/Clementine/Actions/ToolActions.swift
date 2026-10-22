@@ -111,6 +111,9 @@ enum ToolActions {
 
     // MARK: Video & audio
 
+    static let gifRates = [10, 12, 15, 24, 30]
+    static let gifWidths: [Int?] = [320, 480, 640, 720, 960, 1280, nil]
+
     static let media: [Action] = [
         Action(id: "tool.media.trim", title: "Trim", symbol: "timeline.selection", mode: .tools,
                parameters: [
@@ -144,6 +147,20 @@ enum ToolActions {
         Action(id: "tool.video.join", title: "Join", symbol: "link", mode: .tools, minInputs: 2, batch: true,
                accepts: kinds(.video),
                run: { ctx in .files([try await MediaEngine.joinVideos(ctx.inputs, progress: ctx.progress)]) }),
+        Action(id: "tool.video.gif", title: "GIF", symbol: "photo.stack", mode: .tools,
+               parameters: [
+                   .choice("fps", "Frame rate", gifRates.map { "\($0) fps" }, default: 2),
+                   .choice("width", "Width", gifWidths.map { $0.map { "\($0) px" } ?? "Original" }, default: 3),
+                   .number("megabytes", "Max size (0 = any)", 0...500, unit: "MB", default: 0),
+               ],
+               accepts: kinds(.video),
+               run: { ctx in
+                   let options = FFmpeg.GIFOptions(fps: gifRates[ctx.params.choice("fps")], width: gifWidths[ctx.params.choice("width")])
+                   let megabytes = ctx.params.number("megabytes")
+                   return .files([try await MediaEngine.gif(ctx.input, options: options,
+                                                            maxBytes: megabytes > 0 ? megabytes * 1_000_000 : nil,
+                                                            progress: ctx.progress)])
+               }),
         Action(id: "tool.audio.normalize", title: "Normalize", symbol: "waveform", mode: .tools,
                accepts: kinds(.audio),
                run: { ctx in .files([try await MediaEngine.normalize(ctx.input, progress: ctx.progress)]) }),
