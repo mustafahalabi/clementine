@@ -90,6 +90,7 @@ struct SettingsView: View {
     @State private var tab: SettingsTab
     @AppStorage(Prefs.enabledKey) private var enabled = true
     @AppStorage(Prefs.revealKey) private var reveal = true
+    @AppStorage(Prefs.controlWheelKey) private var controlWheel = true
     @AppStorage(Prefs.qualityKey) private var quality = 0.85
     @AppStorage(Prefs.toolsDirectoryKey) private var toolsDirectory = ""
     @State private var launchAtLogin = LaunchAtLogin.isOn
@@ -121,10 +122,17 @@ struct SettingsView: View {
             Section("How to use") {
                 ShortcutRow(keys: ["⇧"], action: "Convert", detail: "Change a file's format")
                 ShortcutRow(keys: ["⌥", "⇧"], action: "Tools", detail: "Compress, trim, resize and more")
+                ShortcutRow(keys: ["⌃"], action: "File actions", detail: "Copy path, SHA-256, Terminal, AirDrop")
             }
 
             Section {
                 Toggle("Show the wheel while dragging", isOn: $enabled)
+                Toggle(isOn: $controlWheel) {
+                    Text("⌃ opens the file actions wheel")
+                    Text("Start the drag first: ⌃-click opens Finder's menu instead")
+                }
+                .disabled(!enabled)
+                .uiTestID("settings.controlWheel")
                 Toggle("Reveal finished files in Finder", isOn: $reveal)
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, on in

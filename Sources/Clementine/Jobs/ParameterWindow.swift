@@ -40,6 +40,10 @@ struct ParameterForm: View {
     /// What's typed in number fields, so values apply on every keystroke (a formatted TextField only commits on Return).
     @State private var numberText: [String: String] = [:]
     @FocusState private var focusedField: String?
+    /// The preset name being typed; nil while the naming row is closed.
+    @State var presetName: String?
+    /// What happened to the last Save Preset (true: saved).
+    @State private var presetNote: (text: String, saved: Bool)?
 
     private var showsPreview: Bool { action.preview != nil && urls.count == 1 }
 
@@ -71,7 +75,22 @@ struct ParameterForm: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 2)
 
+            presetRow
+
             HStack(spacing: 10) {
+                if presetName == nil {
+                    Button {
+                        presetName = PresetStore.suggestedName(for: action, values: values)
+                        presetNote = nil
+                        DispatchQueue.main.async { focusedField = Self.presetField }
+                    } label: {
+                        Label("Save as Preset…", systemImage: "bookmark")
+                    }
+                    .buttonStyle(SoftButtonStyle())
+                    .disabled(invalidNumber != nil)
+                    .help("Keep these settings as a slice of their own on the wheel")
+                    .uiTestID("param.savePreset")
+                }
                 if action.preview != nil {
                     Button {
                         values = action.defaults
@@ -90,11 +109,12 @@ struct ParameterForm: View {
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
                 Spacer()
+                // While a preset is being named, Return and Esc belong to that row.
                 Button("Cancel", role: .cancel, action: onCancel)
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(presetName == nil ? .cancelAction : nil)
                     .buttonStyle(SoftButtonStyle())
                 Button("Apply") { onApply(values) }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(presetName == nil ? .defaultAction : nil)
                     .buttonStyle(AccentButtonStyle())
                     .disabled(invalidNumber != nil)
             }
@@ -123,6 +143,53 @@ struct ParameterForm: View {
                 preview = image
                 previewVersion += 1
             }
+        }
+    }
+
+    static let presetField = "preset.name"
+
+    /// Naming a new preset, or how saving the last one went.
+    @ViewBuilder
+    private var presetRow: some View {
+        if presetName != nil {
+            HStack(spacing: 8) {
+                TextField("Preset name", text: Binding(get: { presetName ?? "" }, set: { presetName = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: Self.presetField)
+                    .uiTestID("param.presetName")
+                Button("Cancel") { presetName = nil }
+                    .keyboardShortcut(.cancelAction)
+                    .buttonStyle(SoftButtonStyle())
+                    .uiTestID("param.presetCancel")
+                Button("Save Preset", action: savePreset)
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(AccentButtonStyle())
+                    .uiTestID("param.presetSave")
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+        if let note = presetNote {
+            Label(note.text, systemImage: note.saved ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(note.saved ? Theme.leafText : Theme.cherryText)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
+                .uiTestID("param.presetNote")
+        }
+    }
+
+    private func savePreset() {
+        guard let name = presetName else { return }
+        do {
+            let preset = try PresetStore.shared.add(name: name, action: action.id, values: PresetStore.encode(values, for: action))
+            withAnimation(Theme.snappy) {
+                presetName = nil
+                presetNote = ("Saved “\(preset.name)”. It's a slice on the \(action.mode.title.lowercased()) wheel now.", true)
+            }
+        } catch {
+            presetNote = (error.localizedDescription, false)
         }
     }
 

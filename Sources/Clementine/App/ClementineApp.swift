@@ -61,6 +61,7 @@ private struct MenuContent: View {
         Divider()
         Text("Hold ⇧ while dragging to convert")
         Text("Hold ⌥⇧ while dragging for tools")
+        Text("Hold ⌃ while dragging for file actions")
         Divider()
         HistoryMenu()
         Divider()

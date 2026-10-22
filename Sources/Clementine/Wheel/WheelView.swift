@@ -190,6 +190,16 @@ private struct SliceLabel: View {
                         .symbolRenderingMode(.hierarchical)
                         .symbolEffect(.bounce, value: reduceMotion ? false : hovered)
                         .foregroundStyle(hovered ? Color.white : Theme.accentText)
+                        // A preset wears a small bookmark so it doesn't pass for the action it's based on.
+                        .overlay(alignment: .topTrailing) {
+                            if action.isPreset {
+                                Image(systemName: "bookmark.fill")
+                                    .font(.system(size: 7, weight: .bold))
+                                    .foregroundStyle(hovered ? Color.white : Theme.accentText)
+                                    .offset(x: 7, y: -3)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                     Text(action.title.uppercased())
                         .font(.system(size: 9, weight: .bold, design: .rounded)) // was 8.5; long names wrap
                         .tracking(0.3)

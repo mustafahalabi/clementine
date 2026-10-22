@@ -118,7 +118,7 @@ struct OnboardingView: View {
             OnboardingPage(
                 eyebrow: "Tools",
                 title: "Hold ⌥⇧ for the tools wheel",
-                text: "Add Option and the wheel fills with tools for that kind of file: compress, resize, trim, merge and more. Drop on the middle to cancel.",
+                text: "Add Option and the wheel fills with tools for that kind of file: compress, resize, trim, merge and more. Hold ⌃ alone for file actions like Copy Path, SHA-256 and AirDrop. Drop on the middle to cancel.",
                 keys: ["⌥", "⇧"]
             ) {
                 DemoWheel(mode: .tools, live: live)
