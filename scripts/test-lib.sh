@@ -41,19 +41,25 @@ test_setup() {
   mkdir -p "$F"
   trap _test_cleanup EXIT
 
-  # GitHub's macOS VMs print "IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver" to stdout from the
-  # graphics stack, which would read as an output path. Run the binary through a filter that drops it (stderr is
-  # filtered too and comes out after stdout). The exit status is the binary's.
+  # On GitHub's macOS VMs, system frameworks write to stdout, and it would read as an output path or text result:
+  #   - the graphics stack: "IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver"
+  #   - Vision's ML runtime (QR reading) with no GPU in the VM: "E5RT encountered an STL exception. msg = …." twice,
+  #     with no newline, so it runs into Clementine's own next line.
+  # The binary runs through a filter that cuts these out (stderr is filtered too and comes out after stdout). The
+  # exit status is the binary's. Real output is never changed, so a genuine failure still shows.
   if [[ -n "${BIN:-}" ]]; then
-    cat > "$WORK/clementine" <<WRAP
-#!/usr/bin/env bash
-# The message may lack its newline and run into the next line, so cut it out, then drop lines it left empty.
-strip() { sed -E -e '/^IOServiceMatchingfailed for: [A-Za-z0-9_]+\$/d' -e 's/IOServiceMatchingfailed for: [A-Za-z0-9_]+//g'; }
-err="\$(mktemp "$WORK/stderr.XXXXXX")"
-"$BIN" "\$@" 2>"\$err" | strip
-status=\${PIPESTATUS[0]}
-strip <"\$err" >&2; rm -f "\$err"
-exit \$status
+    { echo '#!/usr/bin/env bash'; printf 'real=%q\nwork=%q\n' "$BIN" "$WORK"; cat <<'WRAP'; } > "$WORK/clementine"
+strip() {
+  # Drop a line only if the noise was all it held.
+  perl -ne 'my $o = $_; s/IOServiceMatchingfailed for: \w+//g;
+    s/E5RT encountered an STL exception\. msg = .*?\.(?=E5RT|== |\/|\n|\z)//g;
+    print unless $_ ne $o && /^\s*\z/'
+}
+err="$(mktemp "$work/stderr.XXXXXX")"
+"$real" "$@" 2>"$err" | strip
+status=${PIPESTATUS[0]}
+strip <"$err" >&2; rm -f "$err"
+exit $status
 WRAP
     chmod +x "$WORK/clementine"
     BIN="$WORK/clementine"
