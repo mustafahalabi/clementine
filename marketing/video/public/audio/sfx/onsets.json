@@ -1,0 +1,62 @@
+{
+ "bloom": {
+  "onset": 0.015,
+  "peak": 0.258,
+  "dur": 1.0
+ },
+ "chime": {
+  "onset": 0.0,
+  "peak": 0.012,
+  "dur": 1.2
+ },
+ "drone": {
+  "onset": 0.0,
+  "peak": 1.442,
+  "dur": 5.0
+ },
+ "glitch": {
+  "onset": 0.0,
+  "peak": 0.156,
+  "dur": 0.6
+ },
+ "impact": {
+  "onset": 0.0,
+  "peak": 0.585,
+  "dur": 2.48
+ },
+ "key": {
+  "onset": 0.012,
+  "peak": 0.231,
+  "dur": 0.48
+ },
+ "notify": {
+  "onset": 0.0,
+  "peak": 0.002,
+  "dur": 0.6
+ },
+ "pop": {
+  "onset": 0.016,
+  "peak": 0.028,
+  "dur": 0.48
+ },
+ "riser": {
+  "onset": 1.957,
+  "peak": 2.336,
+  "dur": 2.48
+ },
+ "swipe": {
+  "onset": 0.0,
+  "peak": 0.078,
+  "dur": 0.48
+ },
+ "tick": {
+  "onset": 0.074,
+  "peak": 0.115,
+  "dur": 0.48
+ },
+ "whoosh": {
+  "onset": 0.067,
+  "peak": 0.185,
+  "dur": 0.68
+ }
+}
