@@ -26,6 +26,8 @@ final class PresetStore: @unchecked Sendable {
     /// Posted on the main queue after the app changes the presets.
     static let didChange = Notification.Name("ClementinePresetsDidChange")
     static let maxNameLength = 60
+    /// Where problems found on load are reported, once per change of the file. The CLI prints them instead.
+    nonisolated(unsafe) static var warn: (String) -> Void = { NSLog("Clementine: %@", $0) }
 
     struct Problem {
         let preset: Preset
@@ -53,8 +55,8 @@ final class PresetStore: @unchecked Sendable {
             if let cache, cache.path == file.path, cache.stamp == stamp { return cache.snapshot }
             let snapshot = Self.read(file)
             cache = (file.path, stamp, snapshot)
-            for problem in snapshot.problems { NSLog("Clementine: skipped preset “%@”: %@", problem.preset.name, problem.reason) }
-            if let error = snapshot.readError { NSLog("Clementine: %@", error) }
+            for problem in snapshot.problems { Self.warn("skipped preset “\(problem.preset.name)”: \(problem.reason)") }
+            if let error = snapshot.readError { Self.warn(error) }
             return snapshot
         }
     }

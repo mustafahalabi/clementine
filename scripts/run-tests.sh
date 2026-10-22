@@ -6,7 +6,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SUITES=("$@")
-[[ ${#SUITES[@]} -gt 0 ]] || SUITES=(smoke-test edge-test stress-test test-image-editor test-waveform test-pdf-metadata test-productivity test-lifecycle)
+[[ ${#SUITES[@]} -gt 0 ]] || SUITES=(smoke-test edge-test stress-test test-image-editor test-waveform test-pdf-metadata test-productivity test-presets-files test-lifecycle)
 
 swift build -q || exit 1   # once up front, so the suites' own builds are no-ops
 

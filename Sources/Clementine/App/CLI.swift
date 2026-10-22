@@ -14,6 +14,7 @@ enum CLI {
     static func run(_ arguments: [String]) -> Never {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
+        PresetStore.warn = { fputs("warning: \($0)\n", stderr) }
         let work = Task { await execute(arguments) }
         handleInterrupts(stopping: work)
         Task {

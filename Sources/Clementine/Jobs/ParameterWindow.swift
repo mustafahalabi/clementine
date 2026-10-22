@@ -168,7 +168,6 @@ struct ParameterForm: View {
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 12)
-            .transition(.opacity.combined(with: .move(edge: .top)))
         }
         if let note = presetNote {
             Label(note.text, systemImage: note.saved ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
@@ -184,10 +183,8 @@ struct ParameterForm: View {
         guard let name = presetName else { return }
         do {
             let preset = try PresetStore.shared.add(name: name, action: action.id, values: PresetStore.encode(values, for: action))
-            withAnimation(Theme.snappy) {
-                presetName = nil
-                presetNote = ("Saved “\(preset.name)”. It's a slice on the \(action.mode.title.lowercased()) wheel now.", true)
-            }
+            presetName = nil
+            presetNote = ("Saved “\(preset.name)”. It's a slice on the \(action.mode.title.lowercased()) wheel now.", true)
         } catch {
             presetNote = (error.localizedDescription, false)
         }

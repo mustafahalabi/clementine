@@ -7,6 +7,7 @@ extension CLI {
         switch command {
         case "--list-presets":
             // id, name, action, values: tab-separated like --history. Skipped presets go to stderr with the reason.
+            PresetStore.warn = { _ in } // said below, once
             let snapshot = store.snapshot
             if let error = snapshot.readError { fputs("\(error)\n", stderr) }
             for slice in snapshot.valid {
