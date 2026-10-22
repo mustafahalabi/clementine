@@ -32,11 +32,23 @@ enum UIPreview {
         done.progress = 1
         done.state = .done
         let failed = RunningJob(title: "Target Size", symbol: "scalemass", detail: "clip.mov")
-        failed.state = .failed("ffmpeg was not found. Install it with `brew install ffmpeg` or set a tools folder in Settings.")
+        failed.state = .failed(ClementineError.missingTool("ffmpeg").localizedDescription)
+        // A batch where several files failed: collapsed behind "Show details…", then opened.
+        let noisy = ClementineError.toolFailed("ffmpeg", """
+            [mov,mp4,m4a,3gp,3g2,mj2 @ 0x600001] moov atom not found
+            [in#0 @ 0x600002] Error opening input: Invalid data found when processing input
+            Error opening input file /Users/me/Movies/broken take 3.mov.
+            """).localizedDescription
+        let batchFailure = (1...3).map { "take \($0).mov: \(noisy)" }.joined(separator: "\n")
+        let manyFailed = RunningJob(title: "Convert to MP4", symbol: "film", detail: "3 of 3 done")
+        manyFailed.state = .failed(batchFailure)
+        let manyOpen = RunningJob(title: "Convert to MP4 ", symbol: "film", detail: "3 of 3 done ")
+        manyOpen.state = .failed(batchFailure)
         let cards = VStack(spacing: 14) {
-            ForEach([running, indeterminate, done, failed], id: \.detail) { job in
+            ForEach([running, indeterminate, done, failed, manyFailed], id: \.detail) { job in
                 JobView(job: job, cancel: {}, dismiss: {}).shadow(color: .black.opacity(0.18), radius: 14, y: 6)
             }
+            JobView(job: manyOpen, cancel: {}, dismiss: {}, expanded: true).shadow(color: .black.opacity(0.18), radius: 14, y: 6)
         }
         .padding(28)
         .background(LinearGradient(colors: [Color(hex: 0x6E8CA8), Color(hex: 0xB59BC4)], startPoint: .topLeading, endPoint: .bottomTrailing))

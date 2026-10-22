@@ -92,9 +92,15 @@ make ui-test                              # every suite
 ```
 
 Output is one line per suite, `✓`/`✗` per check, then `N passed, M failed` (exit 0/1). Current suites: `harness`
-(proves a button press, a drag and typing reach SwiftUI), `midline` (clicks on a control's exact center land,
-across button styles and the chip picker) and `lifecycle quit` (a running encode stopped the way quitting stops
-it: no tool, job or partial output left; it runs last because it refuses tool launches afterwards): 18 checks,
+(proves a button press, a drag and typing reach SwiftUI), `job cards` (a failed card with a long error is capped
+behind "Show details…", and the next card stacks below it, before and after opening the details, without
+covering its Close button; the stack is parked off-screen through `ProgressPanel.stackArea`), `onboarding seen`
+(the tour isn't marked seen until it has been shown and closed), `accent contrast` (white on the accent stops ≥
+3:1 for bold labels, ≥ 7:1 with Increase Contrast; the deep accent ≥ 4.5:1; accent text on cream and charcoal),
+`error copy` (brew hints only without bundled tools, `brew install webp` for img2webp, plain-sentence ffmpeg
+failures, the "Text (OCR)" slice), `midline` (clicks on a control's exact center land, across button styles and
+the chip picker) and `lifecycle quit` (a running encode stopped the way quitting stops it: no tool, job or partial
+output left; it runs last because it refuses tool launches afterwards): 51 checks,
 about 25 s.
 
 **Writing a suite.** Add a file in `Sources/Clementine/Testing/` that extends `UITest` with
@@ -116,7 +122,8 @@ extension UITest {
 }
 ```
 
-No app view is tagged yet (only the harness's own probes are), so tag the controls a new suite needs as you go.
+Few app views are tagged yet (the job card's `job.close.<title>`, `job.undo.<title>`, `job.details.<title>`,
+and `settings.launchAtLogin`), so tag the controls a new suite needs as you go.
 
 `UITestContext` (`t`) provides:
 
@@ -158,7 +165,7 @@ No app view is tagged yet (only the harness's own probes are), so tag the contro
 
 | Command | What you get |
 |---|---|
-| `.build/debug/Clementine --render-ui /tmp/ui photo.jpg voice.m4a clip.mp4` | Every job window, Settings tab, onboarding page and editor, light and dark, as PNGs (~70 s with media). Debug only. |
+| `.build/debug/Clementine --render-ui /tmp/ui photo.jpg voice.m4a clip.mp4` | Every job window, Settings tab, onboarding page and editor, light and dark, as PNGs (~70 s with media). Debug only. Prefix `CLEMENTINE_INCREASE_CONTRAST=1` to render the Increase Contrast accents. |
 | `.build/debug/Clementine --render-wheel /tmp/wheel.png [--tools] [--hover N] [--light] [--click [--chip]] photo.jpg` | The wheel for those files as a PNG (~2 s). Works in any build. |
 | `build/Clementine.app/Contents/MacOS/Clementine --demo-wheel [--tools] [--click] [--hover N] photo.jpg` | The live wheel at screen center without a drag, with real materials and animation. Bundle it first with `scripts/bundle.sh debug`, and quit any running Clementine first. |
 
@@ -185,7 +192,14 @@ them. Test the bundled app (`make install` copies it to `/Applications`):
       Mac, open the DMG and launch with no Gatekeeper warning. `spctl -a -vv /Applications/Clementine.app` should
       say *Notarized Developer ID*, and `xcrun stapler validate` should pass. Bundled ffmpeg runs (no Homebrew on PATH).
 - [ ] First launch: the onboarding window appears, and drags are detected without any permission prompt (the
-      drag monitor is a global mouse-down monitor plus pasteboard polling).
+      drag monitor is a global mouse-down monitor plus pasteboard polling). Launch at login is on (Settings and
+      System Settings › General › Login Items) when the app runs from /Applications. Quitting before the tour
+      appears brings it back on the next launch.
+- [ ] **Reopen**: with Clementine running, open it again from Finder or Spotlight. Settings comes forward (the
+      welcome tour instead if it was never finished or closed).
+- [ ] **Idle CPU**: with the app idle and no wheel showing, `top -l 5 -pid $(pgrep -x Clementine)` stays at ~0 %.
+- [ ] **VoiceOver**: with the click-mode wheel open (Services), VoiceOver reads "Convert wheel for …" and the
+      highlighted slice as the arrow keys move; a finished or failed job is announced.
 
 ### Driving the real app from a script
 

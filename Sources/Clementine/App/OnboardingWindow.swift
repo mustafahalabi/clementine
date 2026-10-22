@@ -7,24 +7,47 @@ import SwiftUI
 enum OnboardingWindow {
     static let seenKey = "hasSeenOnboarding"
     private static var window: FocusablePanel?
+    private static var closeObserver: NSObjectProtocol?
 
-    /// Opens the tour unless it has been shown before. Marked as seen right away so it never nags twice.
+    /// Whether the user has finished or closed the tour. Until then it comes back on the next launch (or reopen),
+    /// so a tour that never made it to the screen doesn't count.
+    static var completed: Bool { UserDefaults.standard.bool(forKey: seenKey) }
+
+    /// Opens the tour unless the user has already been through it.
     static func showIfFirstLaunch() {
-        guard !UserDefaults.standard.bool(forKey: seenKey) else { return }
-        UserDefaults.standard.set(true, forKey: seenKey)
+        guard !completed else { return }
         // Let the menu bar item settle first so the window doesn't race the app's launch.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { show() }
     }
 
     static func show() {
+        prepare().present()
+    }
+
+    /// Builds the window (once) without putting it on screen; UI tests park it off-screen from here.
+    @discardableResult
+    static func prepare() -> FocusablePanel {
         if window == nil {
             let window = FocusablePanel()
             window.title = "Welcome to Clementine" // hidden, but used by Mission Control and VoiceOver
             window.host(OnboardingView(onFinish: { OnboardingWindow.window?.close() }))
             window.center()
+            // Get Started, the close button and Esc all end up here: that's the user saying they're done.
+            closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window,
+                                                                   queue: .main) { _ in
+                MainActor.assumeIsolated { didClose() }
+            }
             self.window = window
         }
-        window?.present()
+        return window!
+    }
+
+    private static func didClose() {
+        UserDefaults.standard.set(true, forKey: seenKey)
+        if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+        closeObserver = nil
+        // Drop the window so its looping demos stop; the next show() builds a fresh one.
+        DispatchQueue.main.async { window = nil }
     }
 }
 
@@ -172,7 +195,7 @@ private struct OnboardingPage<Hero: View>: View {
                     Text(eyebrow.uppercased())
                         .font(.system(size: 10.5, weight: .heavy, design: .rounded))
                         .tracking(1.1)
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(Theme.accentText)
                 }
                 Text(title)
                     .font(.system(size: 23, weight: .bold, design: .rounded))
@@ -215,7 +238,7 @@ private struct PageDots: View {
 
 /// Launch-at-login switch and the privacy promise, on the last page.
 private struct FinishOptions: View {
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = LaunchAtLogin.isOn
     @State private var loginError: String?
     @Environment(\.colorScheme) private var scheme
 
@@ -243,22 +266,14 @@ private struct FinishOptions: View {
             if let loginError {
                 Label(loginError, systemImage: "exclamationmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(Theme.cherry)
+                    .foregroundStyle(Theme.cherryText)
             }
         }
     }
 
     private func setLaunchAtLogin(_ on: Bool) {
-        guard on != (SMAppService.mainApp.status == .enabled) else { return }
-        do {
-            try on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-            loginError = SMAppService.mainApp.status == .requiresApproval
-                ? "Approve Clementine in System Settings › General › Login Items." : nil
-        } catch {
-            loginError = error.localizedDescription
-        }
-        let actual = SMAppService.mainApp.status == .enabled
-        if launchAtLogin != actual { launchAtLogin = actual }
+        loginError = LaunchAtLogin.set(on)
+        if launchAtLogin != LaunchAtLogin.isOn { launchAtLogin = LaunchAtLogin.isOn }
     }
 }
 
@@ -441,7 +456,7 @@ private struct ResultDemo: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 6)
-                    .background(Theme.success, in: Capsule())
+                    .background(Theme.leafDeep, in: Capsule()) // deep enough for white text
                     .shadow(color: Theme.leaf.opacity(0.5), radius: 8, y: 3)
                     .offset(y: 118)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -501,7 +516,7 @@ private struct FileTile: View {
                     .font(.system(size: 11.5, weight: .medium))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
-                    .background(highlighted ? AnyShapeStyle(Theme.tangerine.opacity(0.85)) : AnyShapeStyle(Color.clear),
+                    .background(highlighted ? AnyShapeStyle(Theme.accentDeep) : AnyShapeStyle(Color.clear),
                                 in: RoundedRectangle(cornerRadius: 4))
                     .foregroundStyle(highlighted ? .white : .primary)
                 Text(size).font(.system(size: 10)).foregroundStyle(.secondary)

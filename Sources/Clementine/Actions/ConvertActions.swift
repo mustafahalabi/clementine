@@ -11,7 +11,7 @@ enum ConvertActions {
                accepts: { $0.kind == .image && !format.aliases.contains($0.ext) },
                run: { ctx in .files([try await ImageEngine.convert(ctx.input, to: format)]) })
     } + [
-        Action(id: "convert.image.txt", title: "TXT", mode: .convert,
+        Action(id: "convert.image.txt", title: "Text (OCR)", mode: .convert,
                accepts: { $0.kind == .image && $0.ext != "svg" },
                run: { ctx in .files([try ImageEngine.recognizeText(ctx.input)]) }),
         Action(id: "convert.image.mp4", title: "MP4", mode: .convert, maxConcurrent: 2, // ffmpeg

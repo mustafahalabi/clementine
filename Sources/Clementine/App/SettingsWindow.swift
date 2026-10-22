@@ -37,6 +37,47 @@ private final class TopAnchor: NSObject, NSWindowDelegate {
     }
 }
 
+/// "Launch at login", shared by Settings and the welcome tour. On by default for new installs; once the user
+/// flips either switch, their choice is remembered and never overridden.
+@MainActor
+enum LaunchAtLogin {
+    /// Set once the default has been applied or the user has chosen, so the default never runs twice.
+    static let decidedKey = "launchAtLoginDecided"
+
+    static var isOn: Bool { SMAppService.mainApp.status == .enabled }
+
+    /// Turns it on for a fresh install. Existing installs (they've seen the welcome tour) keep what they had, and
+    /// copies run from outside an Applications folder (a build folder, a translocated download) aren't registered.
+    static func applyDefaultIfNeeded(isFreshInstall: Bool) {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: decidedKey) else { return }
+        guard isFreshInstall else { return defaults.set(true, forKey: decidedKey) }
+        guard isInApplicationsFolder else { return } // try again once the app has been moved
+        defaults.set(true, forKey: decidedKey)
+        guard SMAppService.mainApp.status == .notRegistered else { return }
+        try? SMAppService.mainApp.register() // quietly: the Settings switch shows the real status
+    }
+
+    /// Applies the user's choice; returns a message to show if it didn't fully take.
+    static func set(_ on: Bool) -> String? {
+        UserDefaults.standard.set(true, forKey: decidedKey)
+        guard on != isOn else { return nil }
+        do {
+            try on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+            return SMAppService.mainApp.status == .requiresApproval
+                ? "Approve Clementine in System Settings › General › Login Items." : nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private static var isInApplicationsFolder: Bool {
+        let path = Bundle.main.bundleURL.deletingLastPathComponent().path
+        let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path
+        return path.hasPrefix("/Applications") || path.hasPrefix(home)
+    }
+}
+
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general = "General"
     case wheel = "Wheel"
@@ -51,7 +92,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.revealKey) private var reveal = true
     @AppStorage(Prefs.qualityKey) private var quality = 0.85
     @AppStorage(Prefs.toolsDirectoryKey) private var toolsDirectory = ""
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = LaunchAtLogin.isOn
     @State private var loginError: String?
 
     init(tab: SettingsTab = .general) {
@@ -88,21 +129,14 @@ struct SettingsView: View {
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, on in
                         // Also fires when we snap the toggle back to the real status below.
-                        guard on != (SMAppService.mainApp.status == .enabled) else { return }
-                        do {
-                            try on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-                            loginError = SMAppService.mainApp.status == .requiresApproval
-                                ? "Approve Clementine in System Settings › General › Login Items." : nil
-                        } catch {
-                            loginError = error.localizedDescription
-                        }
-                        let actual = SMAppService.mainApp.status == .enabled
-                        if launchAtLogin != actual { launchAtLogin = actual }
+                        loginError = LaunchAtLogin.set(on)
+                        if launchAtLogin != LaunchAtLogin.isOn { launchAtLogin = LaunchAtLogin.isOn }
                     }
+                    .uiTestID("settings.launchAtLogin")
                 if let loginError {
                     Label(loginError, systemImage: "exclamationmark.circle.fill")
                         .font(.caption)
-                        .foregroundStyle(Theme.cherry)
+                        .foregroundStyle(Theme.cherryText)
                 }
             }
 
@@ -120,10 +154,13 @@ struct SettingsView: View {
                 ToolStatus(name: "ffmpeg", purpose: "video & audio", directory: toolsDirectory)
                 ToolStatus(name: "ffprobe", purpose: "media info", directory: toolsDirectory)
                 ToolStatus(name: "cwebp", purpose: "WebP output", directory: toolsDirectory)
+                ToolStatus(name: "img2webp", purpose: "animated WebP", directory: toolsDirectory)
             } header: {
                 Text("Command-line tools")
             } footer: {
-                Text("Install missing tools with `brew install ffmpeg webp`.")
+                Text(ClementineError.bundlesTools
+                     ? "Clementine includes these tools. The folder above is only used if one goes missing."
+                     : "Install missing tools with `brew install ffmpeg webp`.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -222,7 +259,7 @@ private struct ToolStatus: View {
         LabeledContent {
             HStack(spacing: 6) {
                 Text(path ?? "Not found")
-                    .foregroundStyle(path == nil ? Theme.cherry : .secondary)
+                    .foregroundStyle(path == nil ? Theme.cherryText : .secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: path == nil ? "xmark.circle.fill" : "checkmark.circle.fill")
