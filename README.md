@@ -13,7 +13,6 @@ Drop on one, and the new file appears next to the original. Nothing leaves your 
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-FF7A2F?style=flat-square&logo=apple&logoColor=white)](#system-requirements)
 [![Apple silicon](https://img.shields.io/badge/Apple%20silicon-native-FF5E3A?style=flat-square)](#system-requirements)
 [![Signed and notarized](https://img.shields.io/badge/signed%20%26%20notarized-Apple-34C77B?style=flat-square)](#install)
-[![Downloads](https://img.shields.io/github/downloads/mustafahalabi/clementine/total?style=flat-square&color=6B5646)](https://github.com/mustafahalabi/clementine/releases)
 
 <a href="https://github.com/mustafahalabi/clementine/releases/latest"><img src="docs/images/download-button.png" width="340" alt="Download Clementine for macOS"></a>
 
@@ -29,7 +28,13 @@ Drop on one, and the new file appears next to the original. Nothing leaves your 
 
 </div>
 
-<!-- VIDEO -->
+<div align="center">
+
+<a href="docs/media/clementine-launch.mp4"><img src="docs/images/launch-teaser.webp" width="820" alt="Clementine launch film: a photo dragged with Shift held opens the format wheel and drops as a JPG"></a>
+
+<sub>▶ <a href="docs/media/clementine-launch.mp4"><b>Watch the 65-second launch film</b></a></sub>
+
+</div>
 
 <br>
 

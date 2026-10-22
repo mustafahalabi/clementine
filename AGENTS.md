@@ -19,6 +19,8 @@ https://github.com/mustafahalabi/clementine. Latest release: **v0.1.0** (2026-10
 | [RELEASING.md](RELEASING.md) | Signing, notarizing, the Sparkle feed, publishing; this project's credentials setup |
 | [CHANGELOG.md](CHANGELOG.md) | What shipped in each version |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | ffmpeg (GPL v3), libwebp, Sparkle |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How outside contributors get changes in (fork, PR, owner review) |
+| [marketing/video/README.md](marketing/video/README.md) | The launch film: ElevenLabs audio, Remotion motion graphics, how to re-render |
 
 ## Decisions already made (don't relitigate without the owner)
 
@@ -61,6 +63,10 @@ Known issues and loose ends (none block use):
   verified.
 - Ask before outward-facing or irreversible actions (publishing a release, posting, deleting user data). Pushing
   to `main` after tests and CI pass has been the norm.
+- `main` is protected: pull requests need the owner's approval (CODEOWNERS), a passing `test` check and resolved
+  conversations; no force-pushes or deletion. The owner, as admin, can still push directly; everyone else forks.
+- The ElevenLabs API key is in the build Mac's login keychain (`security find-generic-password -s
+  elevenlabs-api-key -w`). Never print or commit it.
 - Keep the docs current: update README / ARCHITECTURE / CLI / TESTING / CHANGELOG with every user-visible change.
 
 ## Commands
