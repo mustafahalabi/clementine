@@ -106,6 +106,19 @@ installs can never be updated again**; if it leaks, anyone can ship them an upda
    `~/clementine-updates/appcast.xml` (and any `.delta` files). Release notes: drop a `Clementine-0.2.0.html`
    or `.md` next to the zip and it's embedded automatically.
 
+   **Check the old items before publishing.** `--download-url-prefix` applies to *every* zip in the folder, so
+   `generate_appcast` rewrites older versions' enclosure URLs to the new tag (e.g. `…/download/v0.2.0/Clementine-0.1.1.zip`),
+   which doesn't exist. Put each old item back on its own tag, then confirm every URL resolves:
+
+   ```sh
+   sed -i '' 's#download/v0.2.0/Clementine-0.1.1.zip#download/v0.1.1/Clementine-0.1.1.zip#' ~/clementine-updates/appcast.xml
+   # repeat for each older version; .delta files stay on the new tag (they're attached to this release)
+   grep -o 'url="[^"]*"' ~/clementine-updates/appcast.xml   # check each points at the right tag
+   ```
+
+   Editing the URL doesn't affect the EdDSA signature (it covers the archive, not the feed). After publishing,
+   `curl -sIL` each enclosure URL and expect a 200.
+
    To sign a single archive by hand (e.g. to edit the appcast yourself):
 
    ```sh
