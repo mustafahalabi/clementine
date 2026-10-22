@@ -142,6 +142,17 @@ else
   expect "convert falls back to x264" 'x264 "$OUT"' -- convert.media.mov "$F/sdr.mp4"
   expect "join falls back to x264" 'x264 "$OUT"' -- tool.video.join "$F/sdr.mp4" "$F/land.mp4"
 fi
+# An ffmpeg that refuses VideoToolbox, like a Mac without a media engine: jobs must still finish, on x264/x265.
+mkdir -p "$WORK/novt"
+printf '#!/bin/bash\nfor a in "$@"; do [[ "$a" == *videotoolbox* ]] && { echo "Error: cannot create compression session" >&2; exit 1; }; done\nexec %q "$@"\n' \
+  "$APP_FFMPEG" > "$WORK/novt/ffmpeg"
+chmod +x "$WORK/novt/ffmpeg"; ln -s "$(dirname "$APP_FFMPEG")/ffprobe" "$WORK/novt/ffprobe"
+defaults write "$CLEMENTINE_DEFAULTS_SUITE" toolsDirectory -string "$WORK/novt"
+expect "VideoToolbox failure falls back to x264" 'x264 "$OUT"' -- convert.media.mp4 "$F/land24.mp4"
+expect "VideoToolbox failure: join falls back" 'x264 "$OUT"' -- tool.video.join "$F/land24.mp4" "$F/land.mp4"
+expect "VideoToolbox failure: HDR trim falls back to x265" 'grep -aq "x265 (build" "$OUT" && hdr "$OUT" arib-std-b67' -- tool.media.trim --set start=0.5 "$F/hlg.mov"
+if [[ -n "$tools_dir" ]]; then defaults write "$CLEMENTINE_DEFAULTS_SUITE" toolsDirectory -string "$tools_dir"
+else defaults delete "$CLEMENTINE_DEFAULTS_SUITE" toolsDirectory; fi
 expect "--software uses x264" 'x264 "$OUT"' -- convert.media.mov --software "$F/sdr.mp4"
 expect "tiny frame encodes either way" '[[ "$(vdims "$OUT")" == "64,64" ]]' -- convert.media.mp4 "$F/tiny.mp4"
 expect "compress stays on x264" 'x264 "$OUT"' -- tool.compress "$F/sdr.mp4"
