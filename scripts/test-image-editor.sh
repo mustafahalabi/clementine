@@ -253,6 +253,9 @@ shortcut "text results come back" '[[ "$OUT" == "== quad.png =="* ]]' -- tool.im
 if [[ -n "$vision" ]]; then
   shortcut "Remove Background's settings" '[[ "$OUT" == *.webp ]]' -- tool.image.removebg --set format=webp --set crop=On "$F/ball.png"
 fi
+ffmpeg -loglevel error -y -f lavfi -i color=c=red:s=64x64 -frames:v 1 "$F/flat-sc.png"
+shortcut "Compress that can't shrink hands back the original" \
+  '[[ "$OUT" == "$F/flat-sc.png" && -z "$(ls "$F" | grep "^flat-sc" | grep -vx flat-sc.png)" ]]' -- tool.compress "$F/flat-sc.png"
 shortcut_error "unknown setting" 'has no setting "level"' -- tool.image.resize --set level=1 "$F/quad.png"
 shortcut_error "bad value" "not a valid choice" -- tool.image.resize --set size=huge "$F/quad.png"
 shortcut_error "action that doesn't fit the file" "Convert to PDF doesn't work on quad.png" -- convert.document.pdf "$F/quad.png"
