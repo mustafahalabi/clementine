@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Clementine's look: warm citrus accents on calm, slightly warm neutrals, and springy motion.
@@ -16,7 +17,30 @@ enum Theme {
     /// Errors, a cherry red that sits well next to orange.
     static let cherry = Color(hex: 0xE5484D)
 
-    static let accent = LinearGradient(colors: [tangerine, blood], startPoint: .topLeading, endPoint: .bottomTrailing)
+    /// Fills that carry white text (buttons, chips, selected tabs, hovered slices) use a deeper peel than the
+    /// fruit itself: white on #FF9A3C was ~2.1:1. These stops keep white text at ≥ 4.5:1 (≥ 7:1 with Increase
+    /// Contrast). The bright tangerine stays for glows, washes and rings, which carry no text.
+    static let accentTopShade = Shade(normal: 0xBE4A0C, increased: 0x9C3510)     // 5.0:1 / 7.2:1 against white
+    static let accentBottomShade = Shade(normal: 0xB23C10, increased: 0x8A2C0E)  // 5.9:1 / 8.6:1
+    /// Accent-colored text and glyphs on the app's own surfaces: deep orange on light, bright orange on dark.
+    static let accentTextShade = Shade(normal: 0xB5400F, increased: 0x8A2C0E,
+                                       dark: 0xFFA25A, darkIncreased: 0xFFC598)  // ≥ 5.5:1 on cream / charcoal
+
+    /// Status words ("Done", "Failed", "Not found") and fills behind white status text, readable on both schemes.
+    static let leafTextShade = Shade(normal: 0x1A7A48, increased: 0x146238, dark: 0x5BE09B, darkIncreased: 0x8AF0BC)
+    static let cherryTextShade = Shade(normal: 0xC4282E, increased: 0x9E1C22, dark: 0xFF7A7E, darkIncreased: 0xFFA3A6)
+    static let leafDeepShade = Shade(normal: 0x1A7A48, increased: 0x146238)  // 5.4:1 / 7.2:1 against white
+
+    static let accentTop = accentTopShade.color
+    static let accentBottom = accentBottomShade.color
+    static let accentText = accentTextShade.color
+    static let leafText = leafTextShade.color
+    static let cherryText = cherryTextShade.color
+    static let leafDeep = leafDeepShade.color
+
+    static let accent = LinearGradient(colors: [accentTop, accentBottom], startPoint: .topLeading, endPoint: .bottomTrailing)
+    /// The bright fruit gradient, for fills that carry no text (progress bars).
+    static let accentVivid = LinearGradient(colors: [tangerine, blood], startPoint: .topLeading, endPoint: .bottomTrailing)
     static let accentSoft = LinearGradient(colors: [peach.opacity(0.9), tangerine.opacity(0.85)],
                                            startPoint: .topLeading, endPoint: .bottomTrailing)
     static let success = LinearGradient(colors: [Color(hex: 0x5BE09B), leaf], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -38,6 +62,39 @@ enum Theme {
 
     /// Warm-tinted shadow so depth reads as glow, not grime.
     static let glow = Color(hex: 0xFF7A2F).opacity(0.45)
+
+    /// Whether the user turned on Increase Contrast; AppKit-side code checks this, SwiftUI resolves it per appearance.
+    static var increaseContrast: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CLEMENTINE_INCREASE_CONTRAST"] == "1" { return true } // renders
+        #endif
+        return NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+    }
+
+    /// A color that follows light/dark and Increase Contrast at draw time.
+    struct Shade {
+        let normal: UInt32
+        let increased: UInt32
+        var dark: UInt32? = nil
+        var darkIncreased: UInt32? = nil
+
+        func hex(dark isDark: Bool, increased high: Bool) -> UInt32 {
+            isDark ? (high ? (darkIncreased ?? increased) : (dark ?? normal)) : (high ? increased : normal)
+        }
+
+        var color: Color {
+            Color(nsColor: NSColor(name: nil) { appearance in
+                let match = appearance.bestMatch(from: [.aqua, .darkAqua, .accessibilityHighContrastAqua,
+                                                        .accessibilityHighContrastDarkAqua])
+                let isDark = match == .darkAqua || match == .accessibilityHighContrastDarkAqua
+                let high = match == .accessibilityHighContrastAqua || match == .accessibilityHighContrastDarkAqua
+                    || Theme.increaseContrast
+                let hex = self.hex(dark: isDark, increased: high)
+                return NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                               blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+            })
+        }
+    }
 
     // MARK: Motion
 

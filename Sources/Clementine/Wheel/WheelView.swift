@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
 
 struct WheelView: View {
     @ObservedObject var model: WheelModel
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let size = model.canvasSize
@@ -19,7 +21,7 @@ struct WheelView: View {
                 Backdrop(radius: outer + 8)
                 Ring(model: model, size: size)
                     .id("\(model.mode)-\(model.session)")
-                    .transition(.asymmetric(
+                    .transition(reduceMotion ? .opacity : .asymmetric(
                         insertion: .scale(scale: 0.86).combined(with: .opacity),
                         removal: .scale(scale: 1.08).combined(with: .opacity)))
                 ModeChip(mode: model.mode, switchable: model.interactive, hovered: model.chipHovered)
@@ -28,11 +30,14 @@ struct WheelView: View {
             Hub(model: model)
         }
         .frame(width: size, height: size)
-        .scaleEffect(model.visible ? 1 : 0.8)
+        // Reduce Motion: a plain fade, no zoom or blur.
+        .scaleEffect(model.visible || reduceMotion ? 1 : 0.8)
         .opacity(model.visible ? 1 : 0)
-        .blur(radius: model.visible ? 0 : 8)
-        .animation(Theme.spring, value: model.visible)
-        .animation(Theme.spring, value: model.mode)
+        .blur(radius: model.visible || reduceMotion ? 0 : 8)
+        .animation(reduceMotion ? Theme.ease : Theme.spring, value: model.visible)
+        .animation(reduceMotion ? Theme.ease : Theme.spring, value: model.mode)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(model.mode == .convert ? "Convert wheel" : "Tools wheel")
     }
 }
 
@@ -82,16 +87,16 @@ private struct SliceView: View {
 
     var body: some View {
         let slice = Slice(index: index, count: model.actions.count, inner: model.innerRadius, outer: model.outerRadius)
-        // Hovered slices slide outward along their own direction.
-        let pop: CGFloat = hovered ? 7 : 0
+        // Hovered slices slide outward along their own direction (not under Reduce Motion).
+        let pop: CGFloat = hovered && !reduceMotion ? 7 : 0
         let offset = CGSize(width: pop * CGFloat(sin(angle)), height: -pop * CGFloat(cos(angle)))
         let dimmed = model.hovered != nil && !hovered
 
         ZStack {
             Group {
                 if hovered {
-                    // Lighter by the hub, deeper at the rim, the same for every slice.
-                    let fill = RadialGradient(colors: [Theme.tangerine, Theme.blood], center: .center,
+                    // Lighter by the hub, deeper at the rim, the same for every slice. Deep enough for white text.
+                    let fill = RadialGradient(colors: [Theme.accentTop, Theme.accentBottom], center: .center,
                                               startRadius: model.innerRadius, endRadius: model.outerRadius)
                     slice.fill(fill)
                     slice.stroke(fill, style: StrokeStyle(lineWidth: 5, lineJoin: .round))
@@ -103,7 +108,7 @@ private struct SliceView: View {
             .shadow(color: hovered ? Theme.glow : .clear, radius: 14, y: 4)
             slice.stroke(hovered ? Color.white.opacity(0.35) : Theme.hairline(scheme), lineWidth: 0.75)
 
-            SliceLabel(action: action, mode: model.mode, hovered: hovered)
+            SliceLabel(action: action, mode: model.mode, hovered: hovered, reduceMotion: reduceMotion)
                 .position(labelPosition)
         }
         .frame(width: size, height: size)
@@ -113,8 +118,11 @@ private struct SliceView: View {
         .scaleEffect(appeared || reduceMotion ? 1 : 0.7)
         .rotationEffect(.degrees(appeared || reduceMotion ? 0 : -14))
         .opacity(appeared ? 1 : 0)
-        .animation(Theme.snappy, value: hovered)
+        .animation(reduceMotion ? Theme.ease : Theme.snappy, value: hovered)
         .animation(Theme.ease, value: dimmed)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(action.accessibilityName)
+        .accessibilityAddTraits(hovered ? [.isButton, .isSelected] : .isButton)
         .onAppear {
             withAnimation(Theme.spring.delay(reduceMotion ? 0 : Double(index) * 0.022)) { appeared = true }
         }
@@ -165,6 +173,7 @@ private struct SliceLabel: View {
     let action: Action
     let mode: WheelMode
     let hovered: Bool
+    var reduceMotion = false
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -178,21 +187,21 @@ private struct SliceLabel: View {
                     Image(systemName: action.symbol!)
                         .font(.system(size: 16, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
-                        .symbolEffect(.bounce, value: hovered)
-                        .foregroundStyle(hovered ? AnyShapeStyle(.white) : AnyShapeStyle(Theme.accent))
+                        .symbolEffect(.bounce, value: reduceMotion ? false : hovered)
+                        .foregroundStyle(hovered ? Color.white : Theme.accentText)
                     Text(action.title.uppercased())
-                        .font(.system(size: 8.5, weight: .bold, design: .rounded))
-                        .tracking(0.4)
+                        .font(.system(size: 9, weight: .bold, design: .rounded)) // was 8.5; long names wrap
+                        .tracking(0.3)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(width: 64)
+                .frame(width: 62) // narrow enough to stay inside the slice when the hover scales it up
             }
         }
         .foregroundStyle(hovered ? Color.white : (scheme == .dark ? Color(hex: 0xF4E9DF) : Color(hex: 0x4A3628)))
         .shadow(color: hovered ? .black.opacity(0.18) : .clear, radius: 2, y: 1)
-        .scaleEffect(hovered ? 1.1 : 1)
+        .scaleEffect(hovered && !reduceMotion ? 1.1 : 1)
     }
 }
 
@@ -201,7 +210,8 @@ private struct Hub: View {
     @ObservedObject var model: WheelModel
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var spin = false
+    /// Whether the hosting window is actually on screen; the wheel's panel lives for the app's whole life.
+    @State private var onScreen = false
 
     private var target: Action? {
         model.hovered.flatMap { $0 < model.actions.count ? model.actions[$0] : nil }
@@ -226,17 +236,28 @@ private struct Hub: View {
         }
         .frame(width: diameter, height: diameter)
         .clipShape(Circle())
-        .overlay(
-            Circle()
-                .strokeBorder(AngularGradient(colors: [Theme.tangerine, Theme.peach, Theme.blood, Theme.tangerine],
-                                              center: .center), lineWidth: 3)
-                .rotationEffect(.degrees(spin ? 360 : 0))
-                .padding(-3).allowsHitTesting(false))
+        .overlay(ring.padding(-3).allowsHitTesting(false))
+        .background(WindowVisibilityReader(visible: $onScreen).allowsHitTesting(false))
         .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
         .animation(Theme.snappy, value: target?.id)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) { spin = true }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(target.map { "\(model.mode == .convert ? "Convert to" : "Apply") \($0.title)" } ?? model.summary)
+        .accessibilityHint("Drop or click here to cancel")
+    }
+
+    /// The citrus ring slowly turns, but only while the wheel is on screen: a forever animation in the hidden
+    /// panel kept the app at a few percent CPU all day. Still under Reduce Motion.
+    @ViewBuilder
+    private var ring: some View {
+        let stroke = Circle().strokeBorder(AngularGradient(colors: [Theme.tangerine, Theme.peach, Theme.blood, Theme.tangerine],
+                                                           center: .center), lineWidth: 3)
+        if reduceMotion {
+            stroke
+        } else {
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: !(model.visible && onScreen))) { context in
+                let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 6) / 6
+                stroke.rotationEffect(.degrees(turn * 360))
+            }
         }
     }
 
@@ -279,6 +300,7 @@ private struct ModeChip: View {
     let mode: WheelMode
     var switchable = false
     var hovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 6) {
@@ -298,11 +320,15 @@ private struct ModeChip: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(Theme.accent, in: Capsule())
-        .overlay(Capsule().fill(.white.opacity(hovered ? 0.16 : 0)))
+        // Hover darkens rather than lightens, so the white text keeps its contrast.
+        .overlay(Capsule().fill(.black.opacity(hovered ? 0.12 : 0)).allowsHitTesting(false))
         .shadow(color: Theme.glow.opacity(hovered ? 1 : 0.8), radius: hovered ? 9 : 6, y: 2)
-        .scaleEffect(hovered ? 1.06 : 1)
+        .scaleEffect(hovered && !reduceMotion ? 1.06 : 1)
         .contentTransition(.interpolate)
         .animation(Theme.snappy, value: hovered)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(mode == .convert ? "Convert wheel" : "Tools wheel")
+        .accessibilityHint(switchable ? "Click or press Tab to switch to the \(mode == .convert ? "tools" : "convert") wheel" : "")
     }
 }
 
@@ -316,4 +342,54 @@ private struct EmptyNotice: View {
             .padding(.vertical, 6)
             .background(.regularMaterial, in: Capsule())
     }
+}
+
+/// Reports whether the hosting window is visible on screen (ordered in and not fully covered), so perpetual
+/// animations can stop when nobody can see them.
+struct WindowVisibilityReader: NSViewRepresentable {
+    @Binding var visible: Bool
+
+    func makeNSView(context: Context) -> Probe {
+        let probe = Probe()
+        probe.onChange = { visible in
+            DispatchQueue.main.async { if self.visible != visible { self.visible = visible } }
+        }
+        return probe
+    }
+
+    func updateNSView(_ nsView: Probe, context: Context) {}
+
+    final class Probe: NSView {
+        var onChange: ((Bool) -> Void)?
+        private var observers: [NSObjectProtocol] = []
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            guard let window else { return onChange?(false) ?? () }
+            let names: [Notification.Name] = [NSWindow.didChangeOcclusionStateNotification, NSWindow.willCloseNotification]
+            for name in names {
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] note in
+                    MainActor.assumeIsolated {
+                        self?.report(closing: note.name == NSWindow.willCloseNotification)
+                    }
+                })
+            }
+            report(closing: false)
+        }
+
+        private func report(closing: Bool) {
+            onChange?(!closing && (window?.occlusionState.contains(.visible) ?? false))
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+    }
+}
+
+extension Action {
+    /// What VoiceOver reads for a slice: "Convert to PNG", "Compress".
+    var accessibilityName: String { mode == .convert ? "Convert to \(title)" : title }
 }

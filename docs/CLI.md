@@ -222,7 +222,7 @@ None of these take parameters.
 | `convert.image.bmp` | BMP | image, not bmp | 1+ | no |
 | `convert.image.gif` | GIF | image, not gif | 1+ | no |
 | `convert.image.pdf` | PDF | image, not pdf (always true: pdf is its own kind) | 1+ | no |
-| `convert.image.txt` | TXT | image except svg (OCR via Vision; fails with "No text found") | 1+ | no |
+| `convert.image.txt` | Text (OCR) | image except svg (OCR via Vision; fails with "No text found") | 1+ | no |
 | `convert.image.mp4` | MP4 | gif, or animated webp (max 2 at once) | 1+ | no |
 | `convert.media.mp4` | MP4 | video, not mp4/m4v | 1+ | no |
 | `convert.media.mov` `.mkv` `.avi` `.wmv` `.webm` `.gif` | MOV, MKV, AVI, WMV, WEBM, GIF | video, not the same format | 1+ | no |
