@@ -8,7 +8,7 @@
     10-bit HEVC in MP4/MOV.
   - H.264/HEVC encode on the media engine (VideoToolbox) for Convert, Trim, Speed, Rotate and Join: a 5 s 4K clip
     converts in 2.9 s instead of 8.2 s, using 2.7 s of CPU instead of 49 s, at the same VMAF. Falls back to
-    software by itself; Settings › **Use hardware encoding** turns it off and the CLI has `--software`.
+    software by itself; Settings › **Use hardware encoding for video** turns it off and the CLI has `--software`.
   - Join honours phone rotation and makes a portrait video from portrait clips, and keeps the clips' frame rate
     instead of forcing 30 fps.
   - New **GIF** tool: frame rate, width (or original) and an optional "under N MB" target. GIFs use 15 fps, a

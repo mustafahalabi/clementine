@@ -127,6 +127,11 @@ struct SettingsView: View {
             Section {
                 Toggle("Show the wheel while dragging", isOn: $enabled)
                 Toggle("Reveal finished files in Finder", isOn: $reveal)
+                Toggle(isOn: $hardwareEncoding) {
+                    Text("Use hardware encoding for video")
+                    Text("Much faster, slightly larger files. Compress always uses software.")
+                }
+                .uiTestID("settings.hardwareEncoding")
                 Toggle("Launch at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, on in
                         // Also fires when we snap the toggle back to the real status below.
@@ -148,17 +153,6 @@ struct SettingsView: View {
                         Text("\(Int(quality * 100))%").monospacedDigit().frame(width: 40, alignment: .trailing)
                     }
                 }
-            }
-
-            Section {
-                Toggle("Use hardware encoding", isOn: $hardwareEncoding)
-                    .uiTestID("settings.hardwareEncoding")
-            } header: {
-                Text("Video")
-            } footer: {
-                Text("H.264 and HEVC encode on the Mac's media engine: much faster, slightly larger files. Compress always uses the smaller software encoder.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section {

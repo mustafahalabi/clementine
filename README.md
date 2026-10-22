@@ -146,7 +146,7 @@ stay portrait.
 
 iPhone HDR video converts to SDR with correct colours instead of looking washed out, and edits keep it HDR (10-bit
 HEVC). H.264 and HEVC encode on the Mac's media engine (VideoToolbox), several times faster than software; turn
-**Use hardware encoding** off in Settings for the smallest files.
+**Use hardware encoding for video** off in Settings for the smallest files.
 
 ### Audio
 

@@ -75,7 +75,7 @@ keep their defaults.
 **`--record`** also does what a wheel drop does: it updates usage counts (wheel ordering) and, if the run produced
 files, adds a history entry. Without it, `--run` leaves no trace.
 
-**`--software`** encodes H.264/HEVC with x264/x265 for this run even when Settings › Use hardware encoding is on
+**`--software`** encodes H.264/HEVC with x264/x265 for this run even when Settings › Use hardware encoding for video for video is on
 (the default). Hardware encoding (VideoToolbox) covers Convert to MP4/MOV/MKV/3GP/TS/FLV, Trim, Speed, Rotate and
 Join; if VideoToolbox fails (e.g. a virtual Mac without a media engine) the same job reruns in software by itself.
 Compress and Target Size always use x264, which makes smaller files at the same quality. The setting is the
