@@ -97,6 +97,18 @@ enum ToolActions {
                preview: { url, params in ImageTools.preview(url) { try ImageTools.withBackground($0, params) } },
                accepts: kinds(.image),
                run: { ctx in .files([try await ImageTools.addBackground(ctx.input, params: ctx.params)]) }),
+        Action(id: "tool.image.removebg", title: "Cut Out Subject", symbol: "person.and.background.dotted", mode: .tools,
+               maxConcurrent: 2, // Vision's model is memory-hungry on big photos
+               parameters: [
+                   .choice("format", "Save as", BackgroundRemover.formatNames),
+                   .choice("crop", "Crop to subject", ["Off", "On"]),
+               ],
+               preview: { url, params in
+                   ImageTools.preview(url) { try BackgroundRemover.cutOut($0, crop: params.choice("crop") == 1) }
+               },
+               accepts: { $0.kind == .image && $0.ext != "svg" },
+               run: { ctx in .files([try await BackgroundRemover.removeBackground(ctx.input, format: ctx.params.choice("format"),
+                                                                                  crop: ctx.params.choice("crop") == 1)]) }),
         Action(id: "tool.image.qr", title: "Read QR", symbol: "qrcode.viewfinder", mode: .tools,
                accepts: kinds(.image),
                run: { ctx in .text(title: ctx.input.lastPathComponent, body: try ImageEngine.readCodes(ctx.input)) }),
