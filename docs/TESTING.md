@@ -6,7 +6,7 @@ for every run. Editors and other UI are covered by an off-screen interaction har
 off-screen renders. A short manual checklist covers what only a real Mac session can confirm.
 
 ```sh
-make test       # all seven shell suites (scripts/run-tests.sh): runs every suite even after a failure, then a summary
+make test       # all eight shell suites (scripts/run-tests.sh): runs every suite even after a failure, then a summary
 make ui-test    # swift build + .build/debug/Clementine --ui-test
 ```
 
@@ -32,8 +32,9 @@ which it uses (`Clementine uses tools in …`). Fixtures are always made with th
 | `test-waveform.sh` | Channels (layouts, gains, RMS levels per channel, 5.1), Bleep on audio and video (picture copied, tone inside/silence outside, codecs), Trim with editor-style ms times, and `--render-ui` of the Trim/Bleep/Channels editors in light and dark. The renders are skipped only when there's no GUI session (`launchctl managername` isn't `Aqua`, e.g. over ssh); a crash or non-zero exit fails the suite. | 32 | ~75 s (≈65 s is `--render-ui`) |
 | `test-pdf-metadata.sh` | Page specs (`3r90`, `r-90`, bare `r90`, duplicates, `1:` prefix, rotation adding up) and merge specs (`2:1-3`, cross-file numbering, error wording). Metadata writers for JPG/PNG/HEIC, MP3/M4A/Opus/FLAC/MOV and PDF: round-trips, clearing, no re-encoding, date/year/track/rating validation. | 70 | ~9 s |
 | `test-productivity.sh` | Wheel ordering from `--record`ed usage (per kind and mode, `orderByUsage` off), hidden slices, history (JSON, 50 cap, order, undo, skip-gone, clear), parallel batches (order, concurrency limits via `CLEMENTINE_TRACE_CONCURRENCY`, collision-free names, partial failure exit 1). Uses a scratch defaults suite and support dir. | 34 | ~6 s |
+| `test-lifecycle.sh` | Process lifecycle: SIGINT/SIGTERM/SIGHUP during a long encode (exit 128 + n, ffmpeg gone, no output or partial left, power assertion held), a tool that ignores SIGTERM (SIGKILL after the grace period), a second signal, fake tools that crash, get killed or exit 255 by themselves (failures, exit 1), and `--set`/`--hover` validation (exit 2). Fake tools go in through the `toolsDirectory` setting in a scratch defaults suite. | 50 | ~30 s |
 
-\* Measured on an M4 Pro (12 cores), macOS 26.1, warm build: 535 checks, about 2.5 minutes in total. Counts
+\* Measured on an M4 Pro (12 cores), macOS 26.1, warm build: about 585 checks, about 3 minutes in total. Counts
 are the `N passed` line of each suite, so they change as cases are added.
 
 **Running.** Each script builds first (`swift build -q`; stress-test retries the build up to 5 times), then runs
@@ -88,7 +89,7 @@ per ref; newer pushes cancel older runs). The job is called `test`, which is the
    back to the newest build for the same toolchain and packages) and `vendor/bin` (keyed on
    `scripts/fetch-tools.sh`).
 2. `make tools` on a cache miss, `brew install ffmpeg webp` (fixtures), `swift build`, `swift build -c release`.
-3. All seven suites, each its own step. They run even if an earlier suite failed, so the run shows every
+3. All eight suites, each its own step. They run even if an earlier suite failed, so the run shows every
    suite's result; any failure fails the job. Clementine uses the bundled tools from `vendor/bin`.
 4. `scripts/bundle.sh debug`: the bundled binary's `--help` (Sparkle embeds and links), the tools are in
    `Contents/Resources/bin`, and a Settings tools folder is searched before them.
@@ -107,8 +108,16 @@ make ui-test                              # every suite
 ```
 
 Output is one line per suite, `✓`/`✗` per check, then `N passed, M failed` (exit 0/1). Current suites: `harness`
-(proves a button press, a drag and typing reach SwiftUI) and `midline` (clicks on a control's exact center land,
-across button styles and the chip picker): 11 checks, about 15 s.
+(proves a button press, a drag and typing reach SwiftUI), `job cards` (a failed card with a long error is capped
+behind "Show details…", and the next card stacks below it, before and after opening the details, without
+covering its Close button; the stack is parked off-screen through `ProgressPanel.stackArea`), `onboarding seen`
+(the tour isn't marked seen until it has been shown and closed), `accent contrast` (white on the accent stops ≥
+3:1 for bold labels, ≥ 7:1 with Increase Contrast; the deep accent ≥ 4.5:1; accent text on cream and charcoal),
+`error copy` (brew hints only without bundled tools, `brew install webp` for img2webp, plain-sentence ffmpeg
+failures, the "Text (OCR)" slice), `midline` (clicks on a control's exact center land, across button styles and
+the chip picker) and `lifecycle quit` (a running encode stopped the way quitting stops it: no tool, job or partial
+output left; it runs last because it refuses tool launches afterwards): 51 checks,
+about 25 s.
 
 **Writing a suite.** Add a file in `Sources/Clementine/Testing/` that extends `UITest` with
 `static var <area>: [Suite]`, and append it to `UITest.all` (kept sorted by area).
@@ -129,7 +138,8 @@ extension UITest {
 }
 ```
 
-No app view is tagged yet (only the harness's own probes are), so tag the controls a new suite needs as you go.
+Few app views are tagged yet (the job card's `job.close.<title>`, `job.undo.<title>`, `job.details.<title>`,
+and `settings.launchAtLogin`), so tag the controls a new suite needs as you go.
 
 `UITestContext` (`t`) provides:
 
@@ -171,7 +181,7 @@ No app view is tagged yet (only the harness's own probes are), so tag the contro
 
 | Command | What you get |
 |---|---|
-| `.build/debug/Clementine --render-ui /tmp/ui photo.jpg voice.m4a clip.mp4` | Every job window, Settings tab, onboarding page and editor, light and dark, as PNGs (~70 s with media). Debug only. |
+| `.build/debug/Clementine --render-ui /tmp/ui photo.jpg voice.m4a clip.mp4` | Every job window, Settings tab, onboarding page and editor, light and dark, as PNGs (~70 s with media). Debug only. Prefix `CLEMENTINE_INCREASE_CONTRAST=1` to render the Increase Contrast accents. |
 | `.build/debug/Clementine --render-wheel /tmp/wheel.png [--tools] [--hover N] [--light] [--click [--chip]] photo.jpg` | The wheel for those files as a PNG (~2 s). Works in any build. |
 | `build/Clementine.app/Contents/MacOS/Clementine --demo-wheel [--tools] [--click] [--hover N] photo.jpg` | The live wheel at screen center without a drag, with real materials and animation. Bundle it first with `scripts/bundle.sh debug`, and quit any running Clementine first. |
 
@@ -198,7 +208,14 @@ them. Test the bundled app (`make install` copies it to `/Applications`):
       Mac, open the DMG and launch with no Gatekeeper warning. `spctl -a -vv /Applications/Clementine.app` should
       say *Notarized Developer ID*, and `xcrun stapler validate` should pass. Bundled ffmpeg runs (no Homebrew on PATH).
 - [ ] First launch: the onboarding window appears, and drags are detected without any permission prompt (the
-      drag monitor is a global mouse-down monitor plus pasteboard polling).
+      drag monitor is a global mouse-down monitor plus pasteboard polling). Launch at login is on (Settings and
+      System Settings › General › Login Items) when the app runs from /Applications. Quitting before the tour
+      appears brings it back on the next launch.
+- [ ] **Reopen**: with Clementine running, open it again from Finder or Spotlight. Settings comes forward (the
+      welcome tour instead if it was never finished or closed).
+- [ ] **Idle CPU**: with the app idle and no wheel showing, `top -l 5 -pid $(pgrep -x Clementine)` stays at ~0 %.
+- [ ] **VoiceOver**: with the click-mode wheel open (Services), VoiceOver reads "Convert wheel for …" and the
+      highlighted slice as the arrow keys move; a finished or failed job is announced.
 
 ### Driving the real app from a script
 

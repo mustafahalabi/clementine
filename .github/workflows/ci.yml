@@ -88,6 +88,9 @@ jobs:
       - name: Productivity test
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: scripts/test-productivity.sh
+      - name: Lifecycle test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/test-lifecycle.sh
 
       - name: App bundle (embeds Sparkle and the tools)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}

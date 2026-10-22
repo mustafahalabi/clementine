@@ -61,12 +61,16 @@ or spaces are fine, if quoted for the shell). Parsing depends on the parameter's
 
 | Type | Parsing | Out-of-range / bad value |
 |---|---|---|
-| number, slider | `Double(value)` | Not a number → `0`. Ranges are **not** enforced by the CLI. The engine may reject the value (for example, Split under 1 s or an impossibly small Target Size) or clamp it (Channels gains to 0…4). |
-| choice | An integer index (0-based), or else an option label matched case-insensitively (`style=black`, `channels=swap`, `"level=best quality"`, `speed=2×`) | Unknown label → **index 0, silently**. Check the catalog below. |
-| text | Taken verbatim (JSON, page specs, time codes) | Validated by the engine, which fails with a readable message |
+| number | `Double(value)` | Not a finite number (`abc`, empty, `nan`, `inf`) → usage error. The parameter's range is **not** enforced: the engine checks the value with a specific message (Split under 1 s, an impossibly small Target Size) or accepts it (Target Size below the sheet's 0.05 MB works for small files). |
+| slider | `Double(value)` | Not a finite number, or outside the slider's range (bounds included, e.g. `exposure` −2…2) → usage error. |
+| choice | An integer index (0-based), or else an option label matched case-insensitively (`style=black`, `channels=swap`, `"level=best quality"`, `speed=2×`) | An index out of range (`speed=99`, `level=-1`) or an unknown label → usage error listing every `index = label`. |
+| text | Taken verbatim (JSON, page specs, time codes); may be empty | Validated by the engine, which fails with a readable message |
 
-An unknown key, or `--set` without `=`, prints `unknown parameter <key> for <id>` to stderr and exits 2. Parameters
-you don't set keep their defaults.
+Usage errors print one line to stderr and exit 2 before anything runs: `speed=99: not a valid choice; use an
+index or label: 0 = 0.25×, …`, `exposure=5: must be between -2 and 2`, `unknown parameter size for tool.fit
+(valid keys: megabytes)`, `--set needs key=value, got "megabytes"` (also for `--set ""` and a trailing `--set`),
+and `unknown option --recrod` for any other `--` argument that isn't an existing file. Parameters you don't set
+keep their defaults.
 
 **`--record`** also does what a wheel drop does: it updates usage counts (wheel ordering) and, if the run produced
 files, adds a history entry. Without it, `--run` leaves no trace.
@@ -85,14 +89,28 @@ file. Output names are reserved while a batch runs, so `dup.png` + `dup.bmp` →
 - failures: `error: <file name>: <message>` on stderr. Other files still finish.
 
 Outputs go next to the input and never overwrite: `photo.jpg`, `photo (compressed).jpg`, `photo (compressed) 2.jpg`.
+Names differing only by case count as clashes, so `Clip.mov` + `clip.ts` → MP4 give `Clip.mp4` and `clip 2.mp4`.
+
+**Interrupting.** SIGINT (Ctrl-C), SIGTERM and SIGHUP stop the run cleanly: tools such as ffmpeg run in their
+own process group, so Clementine terminates them itself (SIGTERM, then SIGKILL after 3 s for one that ignores
+it), each unfinished output is deleted, and every unfinished file is reported as `cancelled: <file name>` on
+stderr. Files that had already finished are complete and printed as usual. If the work hasn't unwound within
+10 s, remaining tools are killed and outputs still being written are deleted. A second signal skips the wait.
+
+A tool that dies from a signal nobody asked for (a crash, an outside `kill`) is a failure, not a cancellation:
+`error: clip.mov: ffmpeg failed: … ffmpeg stopped unexpectedly (Segmentation fault: 11)`.
+
+While `--run` (or a job in the app) is running, Clementine holds a power assertion ("Clementine is converting
+files", see `pmset -g assertions`) so the Mac doesn't idle to sleep mid-encode.
 
 **Exit codes**
 
 | Code | Meaning |
 |---|---|
 | 0 | Every file succeeded (a text result like "No QR code … found" counts as success) |
-| 1 | At least one file failed |
-| 2 | Usage error: unknown action id (usage printed on stdout), unknown parameter, or fewer files than the action's minimum (`<id> needs at least N files`) |
+| 1 | At least one file failed (including a tool that crashed or was killed from outside), or `--undo` had nothing to undo |
+| 2 | Usage error: unknown action id (usage printed on stdout), unknown parameter or option, a `--set` value that doesn't fit the parameter, fewer files than the action's minimum (`<id> needs at least N files`), a `--render-wheel` without its arguments or with `--hover` not followed by a number |
+| 128 + n | Interrupted by signal n: 130 for SIGINT (Ctrl-C), 143 for SIGTERM, 129 for SIGHUP |
 
 Hidden actions still run from the CLI. `maxInputs` is only a wheel rule: `--run` doesn't check it, but
 single-image editors (Redact, Annotate) process each file separately.
@@ -108,7 +126,9 @@ History holds the last 50 jobs that produced files (text-only results aren't rec
 ### `--undo`
 
 Moves the outputs of the newest entry whose files still exist to the Trash, removes that entry, and prints where
-each file went (for example `~/.Trash/clip.mp3`). Entries whose outputs are all gone are skipped. Prints
+each file went (for example `~/.Trash/clip.mp3`). Entries whose outputs are all gone are skipped. Outputs that
+changed after the job wrote them (edited, or replaced by another file) are left in place with a note on stderr;
+if none could be trashed it prints `error: <names> changed after Clementine made it…` and exits 1. Prints
 `nothing to undo` and exits 1 when there's nothing to undo.
 
 ### `--clear-history`
@@ -128,7 +148,8 @@ A design aid that draws the wheel for these files to a PNG without showing anyth
 | `--chip` | With `--click`: the chip in its hovered state |
 
 The output path must come first. It waits about 2 s for the Quick Look thumbnail and the open animation, prints
-the output path and exits 0. With fewer than 2 arguments it prints usage and exits 2. Materials render flat.
+the output path and exits 0. With fewer than 2 arguments it prints usage and exits 2; `--hover` without a
+non-negative number after it exits 2. Materials render flat.
 
 ### `--help`
 
@@ -224,7 +245,7 @@ None of these take parameters.
 | `convert.image.bmp` | BMP | image, not bmp | 1+ | no |
 | `convert.image.gif` | GIF | image, not gif | 1+ | no |
 | `convert.image.pdf` | PDF | image, not pdf (always true: pdf is its own kind) | 1+ | no |
-| `convert.image.txt` | TXT | image except svg (OCR via Vision; fails with "No text found") | 1+ | no |
+| `convert.image.txt` | Text (OCR) | image except svg (OCR via Vision; fails with "No text found") | 1+ | no |
 | `convert.image.mp4` | MP4 | gif, or animated webp (max 2 at once) | 1+ | no |
 | `convert.media.mp4` | MP4 | video, not mp4/m4v | 1+ | no |
 | `convert.media.mov` `.mkv` `.avi` `.wmv` `.webm` `.gif` | MOV, MKV, AVI, WMV, WEBM, GIF | video, not the same format | 1+ | no |
@@ -241,6 +262,16 @@ None of these take parameters.
 | `convert.archive.tar` | TAR | archive, not tar | 1+ | no |
 | `convert.archive.gzip` | GZIP | archive, not gz/tgz | 1+ | no |
 | `archive.zip` `archive.tar` `archive.gzip` | ZIP, TAR, GZIP | anything (fallback, see `--list`) | 1+ | **yes** |
+
+Documents: HTML is converted fully offline. Remote images, stylesheets, fonts, frames, `<base>`, meta refresh and
+scripts are removed before import. Relative, `file:` and `data:` images still load. Plain text and subtitles are
+read as UTF-8, UTF-16/32 (BOM, or BOM-less UTF-16) or Windows-1252. PDFs use the system's default paper size with 1"
+margins. A folder that isn't writable fails at once with "the folder isn't writable".
+
+Extracting (and repacking, which extracts first) fails with `<name> expands to far more than an archive of its size
+should…` when the contents would exceed 250× the archive's size (and 1 GiB), or with `There isn't enough free
+space…` when they'd leave less than 512 MB free; nothing is left behind. Symlinks pointing outside the extracted
+items are dropped. Created ZIPs mark non-ASCII names as UTF-8.
 
 ### Tools wheel (⌥⇧)
 
@@ -296,6 +327,9 @@ image. Errors: non-positive size, rectangle fully outside, rotation not a multip
 **`boxes`** (`tool.image.redact`): `[{"x":10,"y":20,"w":300,"h":40}, …]`, or `auto` (also `"auto"`) to detect faces
 and lines of text with Vision. Boxes need positive `w`/`h` and at least one must overlap the image. An empty
 list, or `auto` that finds nothing, fails with "Nothing to redact". The default empty value fails as invalid JSON.
+The redacted copy also drops identifying metadata: GPS, maker notes, serial numbers, owner name, EXIF user comment,
+IPTC location and Photoshop resources. Orientation, colour profile and capture settings stay. (Compress keeps all
+metadata on purpose; use `tool.metadata.strip` to remove it.)
 
 **`shapes`** (`tool.image.annotate`): a JSON array of
 `{"kind": K, "points": [[x,y], …], "color": "#RRGGBB", "width": W, "text": "…"}`.

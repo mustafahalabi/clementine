@@ -160,6 +160,17 @@ mkdir -p "$F/arc/uni/café" && echo bonjour > "$F/arc/uni/café/naïve ü.txt" &
 echo "plain text" > "$F/arc/notes.txt" && gzip -k "$F/arc/notes.txt" && bzip2 -k "$F/arc/notes.txt" && mv "$F/arc/notes.txt" "$F/arc/notes-orig.txt"
 echo "data" > "$F/arc/a.txt" && gzip -kf "$F/arc/a.txt"   # a.txt + a.txt.gz exist
 (cd "$F/arc/src" && tar -czf ../proj.tgz proj)
+# 1.5 GiB of zeros packs into ~1.5 MB: a zip (whose listing gives the size away) and a plain .gz (whose doesn't).
+mkdir -p "$F/bomb" && mkfile -n 1536m "$WORK/zeros.bin"
+gzip -9 -c "$WORK/zeros.bin" > "$F/bomb/zeros.bin.gz" && (cd "$WORK" && tar -c --format zip -f "$F/bomb/zeros.zip" zeros.bin)
+rm -f "$WORK/zeros.bin"
+# Names differing only by case, converted together, must not land on one file.
+mkdir -p "$F/case"
+q -f lavfi -i testsrc=size=160x120:rate=10 -t 1 -c:v libx264 -pix_fmt yuv420p "$F/case/Clip.mov"
+q -f lavfi -i testsrc=size=160x120:rate=10 -t 2 -c:v libx264 -pix_fmt yuv420p -f mpegts "$F/case/clip.ts"
+# Undo: outputs edited after the job stay put.
+mkdir -p "$F/undo"
+q -f lavfi -i testsrc=size=64x64 -frames:v 1 "$F/undo/one.png" && cp "$F/undo/one.png" "$F/undo/two.png" && cp "$F/undo/one.png" "$F/undo/old.png"
 
 # ---------------------------------------------------------------- harness
 pass=0; fail=0; failures=()
@@ -189,7 +200,9 @@ expect_error() {
   shopt -s nocasematch
   if [[ "$out" != *"$needle"* ]]; then shopt -u nocasematch; bad "$name" "unexpected message: $out"; return; fi
   shopt -u nocasematch
-  if [[ "$out" == *"ffmpeg failed"* || "$out" == *"ffprobe failed"* || "$out" == *"tar failed"* || "$out" == *"gzip failed"* ]]; then
+  # Tool failures read "<plain sentence>\n<tool> said: …" (older builds: "<tool> failed: …").
+  if [[ "$out" == *"ffmpeg failed"* || "$out" == *"ffprobe failed"* || "$out" == *"tar failed"* || "$out" == *"gzip failed"* ||
+        "$out" == *"ffmpeg said:"* || "$out" == *"ffprobe said:"* || "$out" == *"tar said:"* || "$out" == *"gzip said:"* ]]; then
     bad "$name" "raw tool error: $out"; return
   fi
   ok "$name"
@@ -407,6 +420,44 @@ expect "plain .gz → tar" 'tar -tf "$OUT" | grep -q notes.txt' -- convert.archi
 expect "plain .bz2 extract → notes.txt" '[[ -f "$OUT" ]] && grep -q "plain text" "$OUT"' -- convert.archive.extract "$F/arc/notes.txt.bz2"
 expect "gzip a.txt when a.txt.gz exists keeps .txt.gz" '[[ "$OUT" == *.txt.gz ]] && [[ "$(gzip -dc "$OUT")" == data ]]' -- archive.gzip "$F/arc/a.txt"
 expect "extract a.txt.gz when a.txt exists → 'a 2.txt'" '[[ "$(basename "$OUT")" == "a 2.txt" ]]' -- convert.archive.extract "$F/arc/a.txt.gz"
+
+echo "Archive bombs"
+expect_error "zip bomb refused from its listing" "expands to far more" -- convert.archive.extract "$F/bomb/zeros.zip"
+expect_error "zip bomb refused when repacking" "expands to far more" -- convert.archive.tar "$F/bomb/zeros.zip"
+expect_error "gz bomb stopped while extracting" "expands to far more" -- convert.archive.extract "$F/bomb/zeros.bin.gz"
+# expect_error checks the archive's folder; the staging folders live in the temporary items folder.
+if ! find "${TMPDIR:-/tmp}" -name 'zeros.bin*' 2>/dev/null | grep -q .; then ok "bombs leave no staging behind"
+else bad "bombs leave no staging behind" "$(find "${TMPDIR:-/tmp}" -name 'zeros.bin*' 2>/dev/null)"; fi
+
+echo "Output names"
+expect "Clip.mov + clip.ts → two distinct MP4s" '[[ $(echo "$ALL" | wc -l) -eq 2 ]] && A="$(echo "$ALL" | sed -n 1p)" && B="$(echo "$ALL" | sed -n 2p)" \
+  && [[ "$(echo "$A" | tr "[:upper:]" "[:lower:]")" != "$(echo "$B" | tr "[:upper:]" "[:lower:]")" ]] && [[ $(ls "$F/case" | grep -ci "\.mp4$") -eq 2 ]] \
+  && near "$(dur "$A")" 1 && near "$(dur "$B")" 2' -- convert.media.mp4 "$F/case/Clip.mov" "$F/case/clip.ts"
+
+echo "Undo safety"
+export CLEMENTINE_SUPPORT_DIR="$WORK/support"
+"$BIN" --clear-history
+OUTS="$("$BIN" --run convert.image.jpeg --record "$F/undo/one.png" "$F/undo/two.png")"
+ONE="$(echo "$OUTS" | sed -n 1p)"; TWO="$(echo "$OUTS" | sed -n 2p)"
+echo "edited" >> "$TWO"
+TRASHED="$("$BIN" --undo 2>"$WORK/undo-note")"
+if [[ ! -e "$ONE" && -e "$TWO" && $(echo "$TRASHED" | grep -c .) -eq 1 && -e "$TRASHED" ]]; then ok "undo trashes only outputs that are unchanged"
+else bad "undo trashes only outputs that are unchanged" "one=$ONE two=$TWO trashed=$TRASHED"; fi
+rm -rf "$TRASHED"
+if grep -q "left in place" "$WORK/undo-note"; then ok "undo notes what it left"; else bad "undo notes what it left" "$(cat "$WORK/undo-note")"; fi
+OUT="$("$BIN" --run convert.image.jpeg --record "$F/undo/one.png")"
+rm "$OUT" && cp "$F/undo/two.png" "$OUT"   # someone else's file now sits at the output's path
+if ! msg="$("$BIN" --undo 2>&1)" && [[ -e "$OUT" && "$msg" == *"left in place"* ]]; then ok "undo leaves a replaced output alone and says why"
+else bad "undo leaves a replaced output alone and says why" "$msg"; fi
+# Entries saved by 0.1.0 have no stamps; undo still works for them.
+OLD="$F/undo/old.jpg"; cp "$F/undo/old.png" "$OLD"
+printf '[{"actionID":"convert.image.jpeg","date":"2026-10-01T10:00:00Z","id":"%s","inputs":["%s"],"outputs":["%s"],"symbol":"photo","title":"JPEG"}]' \
+  "$(uuidgen)" "$F/undo/old.png" "$OLD" > "$CLEMENTINE_SUPPORT_DIR/history.json"
+TRASHED="$("$BIN" --undo)"
+if [[ ! -e "$OLD" && -e "$TRASHED" ]]; then ok "undo still works on old history entries"; else bad "undo still works on old history entries" "$TRASHED"; fi
+rm -rf "$TRASHED"
+"$BIN" --clear-history
+unset CLEMENTINE_SUPPORT_DIR
 
 echo
 echo "Passed $pass, failed $fail."

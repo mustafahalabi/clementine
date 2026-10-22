@@ -160,7 +160,7 @@ installs can never be updated again**; if it leaks, anyone can ship them an upda
 - **Bumping tool versions.** Edit the pinned versions, build paths and SHA-256 hashes at the top of
   `scripts/fetch-tools.sh` (`FFMPEG_CHANNEL=latest` fetches the newest FFmpeg to get the new hashes), then update
   `THIRD_PARTY_NOTICES.md`.
-- **CI** (`.github/workflows/ci.yml`) runs a debug and a release build and all seven headless suites against the
+- **CI** (`.github/workflows/ci.yml`) runs a debug and a release build and all eight headless suites against the
   tools releases bundle (`make tools`) on every push and PR; see docs/TESTING.md. Releases are built locally
   because they need your signing identity.
 - **Privacy.** `PRIVACY.md` describes every network request the app makes. If a change adds one (or touches

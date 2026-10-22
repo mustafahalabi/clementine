@@ -64,7 +64,7 @@ Process entry (`App/ClementineApp.swift`, `Entry.main`): debug-only `--render-ui
 | `Waveform/` | `Waveform` + `WaveformLoader` (peaks, in-memory cache), `Playback` (AVPlayer, `PreviewRenders` in a temp folder), `WaveformEditorModel` (`EditorModel.swift`), `WaveformViews` (shared views, `EditorWindow`), `TrimEditor`, `BleepEditor`, `ChannelsEditor`. |
 | `Jobs/` | `JobRunner`/`RunningJob`, `BatchRunner`/`BatchReport`, `HistoryStore`/`HistoryEntry` (`History.swift`), `ProgressPanel`/`JobView`, `ParameterWindow`/`ParameterForm`, `ResultWindow`, `PageOrganizer`, `MetadataEditor`, `UIPreviewRenderer` (debug `--render-ui`). |
 | `Support/` | `Prefs`, `Output` (+ `Locked`), `FileItem`/`FileKind`, `ClementineError`, `TimeCode`, `Theme`, `ThemeComponents`, `WindowMotion`, `FocusablePanel`, `FirstMouseHostingView` (`FirstMouseHosting.swift`), `uiTestID` (`UITestID.swift`). |
-| `Testing/` | Debug-only `UITest` harness (`UITestHarness.swift`) and the `midline` suite (`UITestMidline.swift`). |
+| `Testing/` | Debug-only `UITest` harness (`UITestHarness.swift`), the `midline` suite (`UITestMidline.swift`) and the first-run suites (`UITestFirstRun.swift`: job cards, onboarding seen, accent contrast, error copy). |
 
 ## 3. Key flows
 
@@ -93,6 +93,17 @@ Process entry (`App/ClementineApp.swift`, `Entry.main`): debug-only `--render-ui
 hit-testing. `present()` bumps `generation`, loads the model, sizes and clamps the frame to the screen under the
 pointer (`layout()`), calls `orderFrontRegardless()`, and sets `visible = true` on the next runloop pass so the
 appear animation runs. `hide()` animates out and calls `orderOut` 0.22 s later if nothing has re-shown it.
+
+The panel lives for the app's whole life, so nothing in `WheelView` may animate forever on its own: the hub's
+turning ring is a `TimelineView` paused unless `model.visible` and the hosting window is on screen
+(`WindowVisibilityReader`, which watches the window's occlusion state). A `repeatForever` there once kept the
+idle app at ~3 % CPU. Under Reduce Motion the ring stands still, the wheel fades instead of zooming and
+blurring, the ring swaps without scaling, and hovered slices don't pop out or bounce.
+
+Accessibility: the `DropCatcher` sits on top of everything, so it is the VoiceOver element for the wheel
+("Convert wheel for 2.4 MB, 9 choices"); its value is the highlighted slice (`Action.accessibilityName`, e.g.
+"Convert to PNG"), arrow keys in click mode post `valueChanged`, and VoiceOver's press runs the slice. The
+SwiftUI slices, hub and chip carry the same labels.
 
 **WheelModel** (`WheelModel.swift`), the geometry:
 - `innerRadius = 60`. `outerRadius = 150`, plus 10 per slice above 8. `canvasSize = outerRadius*2 + 84` (room
@@ -162,7 +173,12 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   and progress never goes backwards. With several units the detail line reads "n of N done". When it finishes:
   reveal the files in Finder (`Prefs.revealInFinder`), open a `ResultWindow` for each text output, write a
   history entry, and offer Undo on the card. The card closes after 1.2 s, or 5 s if Undo is available. Hovering
-  keeps it open (`ProgressPanel.close(after:)`). A failure leaves the card open with the messages.
+  keeps it open (`ProgressPanel.close(after:)`). A failure leaves the card open with the messages; `JobView`
+  shows the first `JobView.collapsedLines` (4) lines and a "Show details…" link that opens the rest in a
+  scroll view capped at 220 pt. `JobView` posts a VoiceOver announcement when a job finishes or fails.
+- `ProgressPanel` stacks the open cards down from the top-right corner by their real heights (`restack()`, on
+  show, resize and close; existing cards glide unless Reduce Motion is on). Fixed 140 pt slots used to let the
+  next card cover a failed card's buttons.
 - `BatchRunner.units`: `[urls]` for batch actions, `[[url]]…` otherwise.
 - `BatchRunner.limit`: `cores = max(1, activeProcessorCount / 2)`. `maxConcurrent` is capped at `cores`. Any
   video or audio in the units means `min(2, cores)` (ffmpeg is already multithreaded); everything else gets
@@ -170,15 +186,29 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
 - `BatchRunner.run`: a `TaskGroup` with a sliding window of `limit` tasks. A private `Tally` (NSLock) tracks
   per-unit fractions → overall progress, the finished count, and the peak concurrency. Debug builds print the
   peak with `CLEMENTINE_TRACE_CONCURRENCY`. Results come back in input order in a `BatchReport`.
-  `CancellationError` sets `cancelled`, and other errors become `failures` (prefixed with the file name when
-  there are several units). The whole run is wrapped in `Output.beginBatch()/endBatch()`.
+  `CancellationError` counts as `cancelled` only if the batch's task was cancelled (otherwise it's a failure,
+  "Stopped unexpectedly."), and other errors become `failures` (prefixed with the file name when there are
+  several units). The whole run is wrapped in `Output.beginBatch()/endBatch()` and holds a
+  `ProcessInfo.beginActivity(.userInitiated, .idleSystemSleepDisabled)` so the Mac doesn't idle to sleep.
 - Cancellation: the card's cancel button, or closing a running card (`windowWillClose`), calls
   `job.task?.cancel()`. Units that haven't started return `CancellationError`. `ProcessRunner`'s
-  `onCancel` terminates the child process, and a process killed by a signal maps back to `CancellationError`.
-  `execute` notices `Task.isCancelled` and closes the card without writing history.
+  `onCancel` marks the child as asked to stop and terminates it; only that mark turns its exit (ffmpeg's 255,
+  or death by SIGTERM) into `CancellationError`. A child that dies of a signal nobody sent is a `toolFailed`
+  ("stopped unexpectedly (Segmentation fault: 11)"). `execute` notices `Task.isCancelled`, records history for
+  any files that had already finished, and closes the card.
+- Quitting and interrupts: `JobRunner.running` lists jobs whose batch is running and `ProcessRunner` keeps a
+  registry of launched children (they lead their own process group, so nothing else would stop them).
+  `AppDelegate.applicationShouldTerminate` returns `.terminateLater` while either is non-empty and runs
+  `JobRunner.stopAll()`; the CLI does the same from `DispatchSource` handlers for SIGINT/SIGTERM/SIGHUP. Both go
+  through `Shutdown.stop`: cancel the work, `ProcessRunner.stopAll` (SIGTERM, SIGKILL to the process group after
+  3 s, and no new launches), wait for the engines to unwind so `Output.produce` deletes their partial outputs,
+  and after 10 s kill whatever is left and `Output.discardInFlight()`.
 - History: `HistoryStore` keeps the newest 50 entries (paths, action ID, title, symbol, date) as pretty-printed
-  ISO-8601 JSON. `undoable` is the newest entry that still has at least one output on disk. `undo` moves the
-  outputs to the Trash with `FileManager.trashItem` and drops the entry. The card's Undo first checks the entry
+  ISO-8601 JSON. Each entry also stores a `FileStamp` per output (inode, size, modification time; folders by inode
+  only), taken when the job finishes. `undoable` is the newest entry that still has at least one output on disk.
+  `undo` moves the outputs that still match their stamp to the Trash with `FileManager.trashItem` and drops the
+  entry; outputs edited or replaced since stay put, and if that leaves nothing to trash it throws to say so.
+  Entries saved before stamps existed (0.1.0) have none and are trusted as before. The card's Undo first checks the entry
   is still there, since it may already have been undone from the menu. `startClock()` ticks every 30 s so
   "2 min ago" stays current.
 
@@ -188,21 +218,34 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   `Bundle.main.resourceURL/bin` (that is `Contents/Resources/bin`), then `/opt/homebrew/bin`, `/usr/local/bin`,
   `/usr/bin`, `/bin`. The Settings folder comes first so people can use their own ffmpeg build without touching
   the signed bundle (the GPL lets them replace it; see THIRD_PARTY_NOTICES.md), and the test suites use it to run
-  against the bundled builds in `vendor/bin`. `require` throws `ClementineError.missingTool`, whose message suggests
-  `brew install ffmpeg` or `brew install webp`. External tools used: `ffmpeg`, `ffprobe`, `cwebp` (WebP output;
+  against the bundled builds in `vendor/bin`. `require` throws `ClementineError.missingTool`. In builds without
+  bundled tools its message suggests `brew install ffmpeg` (ffmpeg, ffprobe) or `brew install webp` (cwebp,
+  img2webp); builds that bundle them (`ClementineError.bundlesTools`) suggest reinstalling instead. External tools used: `ffmpeg`, `ffprobe`, `cwebp` (WebP output;
   ImageIO can't write WebP, see `ImageEngine.swift`) and `img2webp` (fetched and bundled). Archives use the
-  system `zip`, `bsdtar`, `gzip` and `bzip2`.
+  system `bsdtar` (`/usr/bin/tar`, which also writes ZIPs with the UTF-8 name flag), `gzip` and `bzip2`.
+- **ArchiveEngine** (`ArchiveEngine.swift`):
+  - Member names reach bsdtar as `./name` after `--` and are stripped back with `-s`, so names that look like
+    options or bsdtar's `@archive` syntax are only ever paths. Covers creating and repacking.
+  - Extraction (and repacking, which extracts first) runs under a bomb guard: archives with an index (zip, 7z, rar)
+    are refused up front if their listing exceeds the limit, a watchdog polls free space during extraction, and
+    the result is measured at the end. The limit is 250× the archive's size (at least 1 GiB) and never more than
+    the free space minus 512 MB.
+  - After extraction, symlinks whose real target isn't strictly inside the extracted items (absolute, `..`, via
+    other links, or dangling) are deleted.
 - **ProcessRunner.run**: stdin comes from `/dev/null`. Stdout goes to a pipe (with an optional per-line
   `onLine` callback, which ffmpeg progress uses) or to a file (`stdoutFile`, for binary output). Stderr is always
   captured. It finishes when a `DispatchGroup` has seen `terminationHandler` and EOF on both pipes. A non-zero
   exit becomes `ClementineError.toolFailed(name, stderr)`, and `Errors.swift` trims ffmpeg noise out of that
-  message.
+  message and leads with a plain sentence (`plainCause`: damaged file, missing track, disk full, odd size…),
+  keeping the tool's own lines below it as "ffmpeg said: …". A stop we asked for is a `CancellationError`
+  whatever the exit status (see Cancellation above).
 - **FFmpeg** (`FFmpeg.swift`):
   - `probe`: ffprobe JSON with `format=duration:stream=…:stream_disposition=attached_pic`. It reads duration,
     audio channels, the first real video stream (skipping attached pictures) and subtitle codecs.
   - `readable`: rejects empty files and files with no audio or video.
-  - `run`: adds `-hide_banner -nostdin -y -loglevel error -nostats -progress pipe:1` and turns `out_time_us=`
-    into a fraction of the duration.
+  - `run`: adds `-hide_banner -nostdin -n -loglevel error -nostats -progress pipe:1` and turns `out_time_us=`
+    into a fraction of the duration. `-n` because outputs always come from `Output`: a file already at that path
+    isn't ours, so ffmpeg must fail rather than overwrite it.
   - `transcode`: wraps the run in `Output.produce`.
   - `encodeArgs`: per-container codec presets, with even-size scaling for H.264/MPEG-4/WMV and a palette
     pipeline for GIF. `streamMaps` keeps every stream and converts subtitles per container.
@@ -210,8 +253,12 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
 - **Output** (`Support/Output.swift`):
   - `file(beside:name:suffix:ext:)` writes next to the input, e.g. `photo (compressed).jpg`, and never
     overwrites. On a clash it tries `name 2`, `name 3`, and so on.
+  - Names are compared case- and normalization-insensitively, against both the folder's listing and the names
+    reserved by running jobs, so `Clip.mov` + `clip.ts` → MP4 give `Clip.mp4` and `clip 2.mp4` (on APFS/HFS+
+    `Clip.mp4` and `clip.mp4` are one file).
   - During a batch, names it hands out are reserved in a locked set, so two parallel units can't both pick
-    `photo.jpg`. The set is cleared when the last batch ends.
+    `photo.jpg`. `produce` releases a name once its file is written or abandoned, names whose files exist are
+    pruned when the set grows past 256, and the set is cleared when the last batch ends.
   - `produce(url)` deletes a half-written output if the body throws, and `filling(folder)` does the same for
     output folders.
 - Other engines: `ImageEdits` renders the editors' JSON at full resolution, in pixel coordinates of the upright
@@ -240,7 +287,7 @@ could end up visible but not receiving keystrokes. A non-activating panel that c
   `.intrinsicContentSize`, calls `setContentSize(hosting.fittingSize)` right away so that a following `center()`
   uses the real size. Callers that size the window themselves (`ImageEditorWindow`, `MetadataEditor`,
   `PageOrganizer`, `ResultWindow`) pass other sizing options and set a size before calling `center()`.
-  `ProgressPanel.show` likewise sizes the window before `place()`.
+  `ProgressPanel.show` likewise sizes the window before `restack()`.
 - Windows whose content needs drags also set `isMovableByWindowBackground = false` explicitly
   (`ImageEditorWindow`, `PageOrganizer`).
 
@@ -248,6 +295,15 @@ could end up visible but not receiving keystrokes. A non-activating panel that c
 - `Support/Theme.swift`: the palette (`tangerine`, `blood`, `peach`, `leaf`, `cherry`), gradients, and
   scheme-aware `surface`, `hairline` and `secondaryText`. Motion: `Theme.spring`, `.snappy`, `.ease`. Views
   should take colors and animations from here.
+- Contrast: anything with white text on it (buttons, chips, selected tabs, hovered slices) fills with
+  `Theme.accent`, whose stops `accentTop`/`accentBottom` are the fruit a shade deeper (#EE6C14 → #E0501C):
+  ≥ 3.0:1 against white at the lightest point, the large/bold-text threshold, so every label on them is bold.
+  Regular-weight small text on orange uses `Theme.accentDeep` (#BE4A0C, 5.0:1). The bright `tangerine`/`blood`
+  stay for glows, washes, rings and progress bars (`accentVivid`). Accent glyphs and bold accent labels on the
+  app's surfaces use `Theme.accentText` (orange in light mode, bright in dark). These are `Theme.Shade`s: dynamic
+  colors that switch to a deep peel (≥ 7:1) only with Increase Contrast, read from the appearance and
+  `NSWorkspace.accessibilityDisplayShouldIncreaseContrast` (or `CLEMENTINE_INCREASE_CONTRAST=1` in debug builds,
+  for renders). `AccentButtonStyle`'s sheen is kept faint and is off with Increase Contrast.
 - `Support/ThemeComponents.swift`: `Theme.backdrop/card/edge`, `Theme.reduceMotion`
   (`NSWorkspace.accessibilityDisplayShouldReduceMotion`), `GradientBadge`, `WindowBackdrop`, `.card()`, the
   `AccentButtonStyle`, `SoftButtonStyle` and `CircleIconButtonStyle` button styles, `CitrusProgressBar` (reads
@@ -287,8 +343,14 @@ static array until `willClose`.
 | `hiddenActions` | `HiddenActions.key` (sorted string array) | `[]` |
 | `actionUsage` | `ActionUsage.key` (frecency dict) | `{}` |
 | `orderByUsage` | `ActionUsage.orderKey` | `true` |
-| `hasSeenOnboarding` | `OnboardingWindow.seenKey`, written to **`UserDefaults.standard`**, not `Prefs.defaults` | `false` |
+| `hasSeenOnboarding` | `OnboardingWindow.seenKey`, written to **`UserDefaults.standard`**, not `Prefs.defaults`. Set when the tour is finished or closed, not when it's scheduled, so a tour that never appeared comes back. | `false` |
+| `launchAtLoginDecided` | `LaunchAtLogin.decidedKey` (`SettingsWindow.swift`), `.standard`. Set once the launch-at-login default has been applied or the user flipped either switch. | unset |
 
+- Launch at login: new installs (no `hasSeenOnboarding`) running from an Applications folder are registered with
+  `SMAppService.mainApp` on first launch, quietly. Existing installs keep whatever they had, and the user's
+  choice in Settings or the tour is never overridden.
+- Reopen: `AppDelegate.applicationShouldHandleReopen` (opening the app again from Finder, Spotlight or
+  Launchpad) shows Settings, or the welcome tour if it hasn't been completed.
 - Domain: the bundled app uses `app.clementine.Clementine` (`CFBundleIdentifier`). The unbundled
   `.build/debug/Clementine` falls back to a domain named after the executable (`~/Library/Preferences/Clementine.plist`).
   `@AppStorage` in Settings and the menu writes to `.standard`.

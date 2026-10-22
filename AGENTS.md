@@ -74,7 +74,7 @@ Known issues and loose ends (none block use):
 
 ```sh
 swift build                      # debug build (.build/debug/Clementine doubles as the CLI)
-make test                        # all seven headless suites (~2.5 min), summary at the end; scripts/<suite>.sh runs one
+make test                        # all eight headless suites (~3 min), summary at the end; scripts/<suite>.sh runs one
 make ui-test                     # interaction tests in off-screen windows (needs a GUI session)
 make run / make install          # build the .app and launch it / copy it to /Applications
 make tools                       # fetch the verified ffmpeg/ffprobe/cwebp/img2webp into vendor/bin
@@ -83,7 +83,7 @@ scripts/release.sh               # signed + notarized release (env vars in RELEA
 
 Homebrew's `ffmpeg` and `webp` must be installed for tests (fixtures) and for app builds without `make tools`.
 After `make tools`, the suites run Clementine against the bundled tools in `vendor/bin`. CI
-(`.github/workflows/ci.yml`) runs debug and release builds and all seven suites on every push and PR.
+(`.github/workflows/ci.yml`) runs debug and release builds and all eight suites on every push and PR.
 
 ## Conventions
 

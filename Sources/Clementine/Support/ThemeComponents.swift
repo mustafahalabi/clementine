@@ -93,7 +93,11 @@ struct AccentButtonStyle: ButtonStyle {
         let fill: LinearGradient
         let glow: Color
         @Environment(\.isEnabled) private var enabled
+        @Environment(\.colorSchemeContrast) private var contrast
         @State private var hovering = false
+
+        /// A light sheen, kept faint so white text stays above 3:1 on the orange; none with Increase Contrast.
+        private var sheen: Double { contrast == .increased ? 0 : (hovering ? 0.10 : 0.06) }
 
         var body: some View {
             configuration.label
@@ -103,7 +107,7 @@ struct AccentButtonStyle: ButtonStyle {
                 .frame(height: 28)
                 .background {
                     Capsule().fill(fill)
-                        .overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(hovering ? 0.30 : 0.18), .clear],
+                        .overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(sheen), .clear],
                                                                startPoint: .top, endPoint: .bottom)))
                         .overlay(Capsule().strokeBorder(.white.opacity(0.2), lineWidth: 0.5).allowsHitTesting(false))
                 }
@@ -218,7 +222,7 @@ struct CitrusProgressBar: View {
     /// The three gradients stacked and crossfaded, since gradients themselves don't interpolate.
     private var fill: some View {
         ZStack {
-            Capsule().fill(Theme.accent).opacity(tone == .running ? 1 : 0)
+            Capsule().fill(Theme.accentVivid).opacity(tone == .running ? 1 : 0)
             Capsule().fill(Theme.success).opacity(tone == .done ? 1 : 0)
             Capsule().fill(Theme.failure).opacity(tone == .failed ? 1 : 0)
         }
@@ -243,14 +247,14 @@ struct CitrusProgressBar: View {
     @ViewBuilder
     private func sweep(width: CGFloat) -> some View {
         if reduceMotion {
-            Capsule().fill(Theme.accent).opacity(0.45)
+            Capsule().fill(Theme.accentVivid).opacity(0.45)
         } else {
             TimelineView(.animation) { context in
                 let period = 1.3
                 let t = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
                 let eased = 0.5 - cos(t * .pi) / 2
                 let segment = width * 0.34
-                Capsule().fill(Theme.accent)
+                Capsule().fill(Theme.accentVivid)
                     .frame(width: segment)
                     .offset(x: -segment + eased * (width + segment))
             }

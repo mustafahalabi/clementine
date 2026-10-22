@@ -30,24 +30,41 @@ enum Output {
         func make(_ name: String) -> URL {
             dir.appendingPathComponent(ext.isEmpty ? name : "\(name).\(ext)")
         }
+        // Compared case- and normalization-insensitively, as APFS and HFS+ do by default: otherwise `Clip.mov` and
+        // `clip.ts` → MP4 get `Clip.mp4` and `clip.mp4`, which are the same file there. The listing catches names
+        // that differ only by case on case-sensitive volumes too, so outputs stay distinct wherever they're copied.
+        let taken = Set(((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).map(key))
         return reservations.withLock { reserved in
             var candidate = make(base)
             var n = 2
-            while FileManager.default.fileExists(atPath: candidate.path) || reserved.contains(candidate.path) {
+            while taken.contains(key(candidate.lastPathComponent)) || FileManager.default.fileExists(atPath: candidate.path)
+                    || reserved[key(candidate.path)] != nil {
                 candidate = make("\(base) \(n)")
                 n += 1
             }
-            if batches > 0 { reserved.insert(candidate.path) }
+            if batches > 0 {
+                // Once an output exists on disk the check above covers it; drop those so the set can't keep growing
+                // while batches overlap.
+                if reserved.count >= pruneThreshold {
+                    reserved = reserved.filter { !FileManager.default.fileExists(atPath: $0.value) }
+                }
+                reserved[key(candidate.path)] = candidate.path
+            }
             return candidate
         }
+    }
+
+    private static func key(_ path: String) -> String {
+        path.precomposedStringWithCanonicalMapping.folding(options: .caseInsensitive, locale: nil)
     }
 
     // MARK: Reservations
 
     /// Names handed out while files run in parallel, so `photo.png` and `photo.heic` → JPG can't both pick
-    /// `photo.jpg` before either is written. Cleared once no batch is running.
-    private static let reservations = Locked(Set<String>())
+    /// `photo.jpg` before either is written. Keyed by folded path. Cleared once no batch is running.
+    private static let reservations = Locked([String: String]())
     nonisolated(unsafe) private static var batches = 0
+    private static let pruneThreshold = 256
 
     static func beginBatch() {
         reservations.withLock { _ in batches += 1 }
@@ -60,6 +77,11 @@ enum Output {
         }
     }
 
+    /// Frees a name once its file is written (the file now guards it) or abandoned.
+    private static func release(_ url: URL) {
+        reservations.withLock { reserved in _ = reserved.removeValue(forKey: key(url.path)) }
+    }
+
     /// Like `produce`, for an output folder that may not exist (single-file results need no cleanup here).
     static func filling<T>(_ folder: URL?, _ body: () async throws -> T) async throws -> T {
         guard let folder else { return try await body() }
@@ -67,13 +89,27 @@ enum Output {
     }
 
     /// Runs `body`, deleting a half-written `url` if it throws.
+    @discardableResult
     static func produce<T>(_ url: URL, _ body: () async throws -> T) async throws -> T {
+        inFlight.withLock { _ = $0.insert(url.path) }
+        defer {
+            inFlight.withLock { _ = $0.remove(url.path) }
+            release(url)
+        }
         do {
             return try await body()
         } catch {
             try? FileManager.default.removeItem(at: url)
             throw error
         }
+    }
+
+    /// Outputs being written right now.
+    private static let inFlight = Locked(Set<String>())
+
+    /// Deletes outputs whose writers are still running, for a forced exit that can't wait for them to unwind.
+    static func discardInFlight() {
+        for path in inFlight.withLock({ $0 }) { try? FileManager.default.removeItem(atPath: path) }
     }
 }
 

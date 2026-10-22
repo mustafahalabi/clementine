@@ -6,23 +6,27 @@ import SwiftUI
 @MainActor
 final class ProgressPanel: NSObject, NSWindowDelegate {
     private static var open: [ProgressPanel] = []
+    /// Space between stacked cards.
+    private static let gap: CGFloat = 10
+    #if DEBUG
+    /// Where the stack goes instead of the main screen's corner (UI tests park it off-screen).
+    static var stackArea: NSRect?
+    #endif
 
-    private let window: NSPanel
+    let window: NSPanel
     private let job: RunningJob
-    private var slot = 0
     private var closing = false
+    private var placed = false
     private var closeTimer: Timer?
     private var closeDeadline = Date.distantFuture
 
     static func show(_ job: RunningJob) -> ProgressPanel {
         let panel = ProgressPanel(job: job)
-        let taken = Set(open.map(\.slot))
-        panel.slot = (0...).first { !taken.contains($0) }!
         open.append(panel)
         if let content = panel.window.contentView {
             panel.window.setContentSize(content.fittingSize) // size before placing, or it's placed as 0×0
         }
-        panel.place()
+        restack()
         panel.window.animateIn(from: CGVector(dx: 36, dy: 0), duration: 0.42)
         return panel
     }
@@ -80,10 +84,10 @@ final class ProgressPanel: NSObject, NSWindowDelegate {
         close()
     }
 
-    /// Keep the panel pinned to its corner when the content grows (e.g. an error message).
+    /// A card that grows (an error message, "Show details…") pushes the ones below it down.
     func windowDidResize(_ notification: Notification) {
         guard !closing else { return }
-        place()
+        Self.restack()
         window.invalidateShadow()
     }
 
@@ -92,13 +96,40 @@ final class ProgressPanel: NSObject, NSWindowDelegate {
         closeTimer = nil
         if job.state == .running { job.task?.cancel() }
         Self.open.removeAll { $0 === self }
+        Self.restack()
     }
 
-    private func place() {
-        guard let screen = NSScreen.main?.visibleFrame else { return }
-        let size = window.frame.size
-        let top = screen.maxY - 16 - CGFloat(slot) * 140 // fixed slots so panels of different heights never overlap
-        window.setFrameOrigin(NSPoint(x: screen.maxX - size.width - 16, y: top - size.height))
+    /// Stacks the cards down from the top-right corner by their real heights (failed cards are taller and stay
+    /// open, so fixed slots let the next card cover their buttons). Cards on their way out keep their spot.
+    private static func restack() {
+        #if DEBUG
+        let area = stackArea ?? NSScreen.main?.visibleFrame
+        #else
+        let area = NSScreen.main?.visibleFrame
+        #endif
+        guard let area else { return }
+        var top = area.maxY - 16
+        for panel in open {
+            let size = panel.window.frame.size
+            panel.move(to: NSPoint(x: area.maxX - size.width - 16, y: top - size.height))
+            top -= size.height + gap
+        }
+    }
+
+    private func move(to origin: NSPoint) {
+        guard window.frame.origin != origin else { return }
+        // New cards land in place (animateIn slides them); existing ones glide to make room.
+        // Frame animations are paced by the display, so a window that's on no screen (UI tests) moves directly.
+        if placed && window.isVisible && window.screen != nil && !Theme.reduceMotion {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                window.animator().setFrameOrigin(origin)
+            }
+        } else {
+            window.setFrameOrigin(origin)
+        }
+        placed = true
     }
 }
 
@@ -106,9 +137,15 @@ struct JobView: View {
     static let width: CGFloat = 340
     private static let radius: CGFloat = 18
 
+    /// Errors longer than this many lines collapse behind "Show details…".
+    static let collapsedLines = 4
+
     @ObservedObject var job: RunningJob
     let cancel: () -> Void
     let dismiss: () -> Void
+    /// Rendering hook: start with the error details open.
+    var expanded = false
+    @State private var showDetails: Bool?
     @Environment(\.colorScheme) private var scheme
 
     private var tone: CitrusProgressBar.Tone {
@@ -147,6 +184,7 @@ struct JobView: View {
                             Button(action: cancel) { Image(systemName: "xmark") }
                                 .buttonStyle(CircleIconButtonStyle(size: 18))
                                 .help("Cancel")
+                                .accessibilityLabel("Cancel")
                                 .transition(.scale.combined(with: .opacity))
                         } else if job.undo != nil && !job.undone {
                             undoButton
@@ -164,6 +202,20 @@ struct JobView: View {
         .background { cardBackground }
         .animation(Theme.spring, value: job.state)
         .animation(Theme.spring, value: job.undone)
+        .onChange(of: job.state) { _, state in announce(state) }
+    }
+
+    /// Tells VoiceOver how a job ended; the card itself never takes focus.
+    private func announce(_ state: RunningJob.State) {
+        let text: String
+        switch state {
+        case .running: return
+        case .done: text = "\(job.title) done"
+        case .failed(let message):
+            text = "\(job.title) failed. \(message.split(separator: "\n").first.map(String.init) ?? "")"
+        }
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     private var undoButton: some View {
@@ -205,43 +257,82 @@ struct JobView: View {
         case .done:
             Text(job.undone ? "Undone" : "Done")
                 .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(job.undone ? Theme.secondaryText(scheme) : Theme.leaf)
+                .foregroundStyle(job.undone ? Theme.secondaryText(scheme) : Theme.leafText)
                 .contentTransition(.opacity)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         case .failed:
             Text("Failed")
                 .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(Theme.cherry)
+                .foregroundStyle(Theme.cherryText)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         }
     }
 
+    /// Whether `message` is long enough to collapse (by explicit lines, or by wrapping at the card's width).
+    static func isLong(_ message: String) -> Bool {
+        let lines = message.split(separator: "\n", omittingEmptySubsequences: false)
+        let wrapped = lines.reduce(0) { $0 + max(1, Int(ceil(Double($1.count) / 48))) }
+        return wrapped > collapsedLines
+    }
+
     private func failure(_ message: String) -> some View {
-        VStack(alignment: .trailing, spacing: 10) {
-            Text(message)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.primary.opacity(0.85))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(Theme.cherry.opacity(scheme == .dark ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.cherry.opacity(0.25), lineWidth: 1).allowsHitTesting(false))
+        let long = Self.isLong(message)
+        let open = long && (showDetails ?? expanded)
+        return VStack(alignment: .trailing, spacing: 10) {
+            Group {
+                if open {
+                    // Everything, scrolling past a sensible height so the card never outgrows the screen.
+                    ScrollView {
+                        errorText(message).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxHeight: 220)
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    errorText(message)
+                        .lineLimit(Self.collapsedLines)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Theme.cherry.opacity(scheme == .dark ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.cherry.opacity(0.25), lineWidth: 1).allowsHitTesting(false))
             HStack(spacing: 8) {
+                if long {
+                    Button(open ? "Show less" : "Show details…") {
+                        withAnimation(Theme.spring) { showDetails = !open }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Theme.accentText)
+                    .contentShape(Rectangle())
+                    .uiTestID("job.details.\(job.title)")
+                    Spacer(minLength: 0)
+                }
                 // Partial failures can still take back the files that did get made.
                 if job.undo != nil && !job.undone {
                     Button { job.undo?() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
                         .buttonStyle(SoftButtonStyle())
                         .help("Move the files that were made to the Trash")
+                        .uiTestID("job.undo.\(job.title)")
                 }
                 Button("Close", action: dismiss)
                     .buttonStyle(SoftButtonStyle())
+                    .uiTestID("job.close.\(job.title)")
             }
             .controlSize(.small)
         }
         .padding(.top, 8)
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    private func errorText(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 11.5))
+            .foregroundStyle(.primary.opacity(0.85))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var cardBackground: some View {

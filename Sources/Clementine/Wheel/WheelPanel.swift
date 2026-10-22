@@ -205,6 +205,44 @@ private final class DropCatcher: NSView {
     override var acceptsFirstResponder: Bool { clickMode }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    // MARK: Accessibility
+
+    // The catcher covers the SwiftUI wheel, so VoiceOver lands here: describe the wheel, read the highlighted
+    // slice as the value, and let VoiceOver's press run it.
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .group }
+
+    override func accessibilityLabel() -> String? {
+        let wheel = model.mode == .convert ? "Convert wheel" : "Tools wheel"
+        let count = model.actions.count
+        let choices = count == 1 ? "1 choice" : "\(count) choices"
+        return model.summary.isEmpty ? "\(wheel), \(choices)" : "\(wheel) for \(model.summary), \(choices)"
+    }
+
+    override func accessibilityValue() -> Any? {
+        guard let index = model.hovered, index < model.actions.count else { return "Nothing selected" }
+        return model.actions[index].accessibilityName
+    }
+
+    override func accessibilityHelp() -> String? {
+        clickMode
+            ? "Arrow keys choose a slice, Return runs it, Tab switches wheels, Escape closes."
+            : "Drop the file on a slice to run it, or on the middle to cancel."
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard clickMode, let index = model.hovered else { return false }
+        run(index)
+        return true
+    }
+
+    /// Lets VoiceOver follow keyboard selection in click mode.
+    func announceSelection() {
+        guard clickMode else { return }
+        NSAccessibility.post(element: self, notification: .valueChanged)
+    }
+
     /// Re-reads the pointer, e.g. after the ring changes size under it.
     func refreshHover() {
         guard clickMode, let window else { return }
@@ -273,9 +311,11 @@ private final class DropCatcher: NSView {
         case 124, 125: // → ↓: clockwise
             guard count > 0 else { return }
             model.hovered = model.hovered.map { ($0 + 1) % count } ?? 0
+            announceSelection()
         case 123, 126: // ← ↑: counterclockwise
             guard count > 0 else { return }
             model.hovered = model.hovered.map { ($0 + count - 1) % count } ?? count - 1
+            announceSelection()
         default:
             super.keyDown(with: event)
         }

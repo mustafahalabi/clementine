@@ -40,6 +40,10 @@ enum BatchRunner {
 
         Output.beginBatch()
         defer { Output.endBatch() }
+        // A long encode shouldn't stall because the Mac idled to sleep halfway through.
+        let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled],
+                                                             reason: "Clementine is converting files")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
 
         await withTaskGroup(of: (Int, Result<JobOutput, Error>).self) { group in
             var next = 0
@@ -84,10 +88,12 @@ enum BatchRunner {
                 report.files += outputs
             case .success(.text(let title, let body)):
                 report.texts.append((title, body))
-            case .failure(is CancellationError):
-                report.cancelled = true
+            case .failure(is CancellationError) where report.cancelled:
+                break
             case .failure(let error):
-                let message = units.count > 1 ? "\(unit[0].lastPathComponent): \(error.localizedDescription)" : error.localizedDescription
+                // A CancellationError nobody asked for (the batch wasn't cancelled) is a failure, not a quiet skip.
+                let description = error is CancellationError ? "Stopped unexpectedly." : error.localizedDescription
+                let message = units.count > 1 ? "\(unit[0].lastPathComponent): \(description)" : description
                 report.failures.append(.init(unit: unit, message: message))
             }
         }
