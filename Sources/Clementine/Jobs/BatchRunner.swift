@@ -10,6 +10,8 @@ struct BatchReport {
     var files: [URL] = []
     var texts: [(title: String, body: String)] = []
     var failures: [Failure] = []
+    /// Units that deliberately wrote nothing (`JobOutput.unchanged`), with the reason.
+    var notes: [(unit: [URL], message: String)] = []
     /// Per unit, in order.
     var outcomes: [(unit: [URL], result: Result<JobOutput, Error>)] = []
     var cancelled = false
@@ -89,6 +91,8 @@ enum BatchRunner {
                 report.files += outputs
             case .success(.text(let title, let body)):
                 report.texts.append((title, body))
+            case .success(.unchanged(let message)):
+                report.notes.append((unit, message))
             case .failure(is CancellationError) where report.cancelled:
                 break
             case .failure(let error):

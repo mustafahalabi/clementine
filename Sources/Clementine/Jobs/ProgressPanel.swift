@@ -170,7 +170,8 @@ struct JobView: View {
                 Text(job.detail)
                     .font(.system(size: 11.5))
                     .foregroundStyle(Theme.secondaryText(scheme))
-                    .lineLimit(1)
+                    // A finished card may explain itself ("Already as small as it gets…"); file names stay on one line.
+                    .lineLimit(job.state == .done ? 2 : 1)
                     .truncationMode(.middle)
                     .padding(.top, 1)
                     .contentTransition(.opacity)

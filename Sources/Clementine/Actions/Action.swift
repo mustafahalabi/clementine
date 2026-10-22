@@ -82,6 +82,18 @@ struct JobContext {
 enum JobOutput {
     case files([URL])
     case text(title: String, body: String)
+    /// Nothing written on purpose; the note says why (shown on the job card, printed by the CLI).
+    case unchanged(String)
+
+    static let keptOriginal = "Already as small as it gets — kept the original."
+
+    /// Compress must never hand back a bigger file: if `output` isn't smaller than `input`, it's deleted.
+    static func smaller(_ output: URL, than input: URL) -> JobOutput {
+        func size(_ url: URL) -> Int? { (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize }
+        guard let new = size(output), let old = size(input), new >= old else { return .files([output]) }
+        try? FileManager.default.removeItem(at: output)
+        return .unchanged(keptOriginal)
+    }
 }
 
 typealias Editor = @MainActor (_ urls: [URL], _ defaults: ParamValues, _ apply: @escaping (ParamValues) -> Void) -> Void

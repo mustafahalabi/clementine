@@ -121,8 +121,11 @@ enum UIPreview {
         let partial = RunningJob(title: "Convert to WebP", symbol: "arrow.triangle.2.circlepath", detail: "9 of 10 done")
         partial.state = .failed("broken.png: Couldn't read broken.png.")
         partial.undo = {}
+        let kept = RunningJob(title: "Compress", symbol: "arrow.down.right.and.arrow.up.left", detail: JobOutput.keptOriginal)
+        kept.progress = 1
+        kept.state = .done
         let cards = VStack(spacing: 14) {
-            ForEach([offer, undone, partial], id: \.detail) { job in
+            ForEach([offer, undone, partial, kept], id: \.detail) { job in
                 JobView(job: job, cancel: {}, dismiss: {}).shadow(color: .black.opacity(0.18), radius: 14, y: 6)
             }
         }

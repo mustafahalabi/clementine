@@ -15,14 +15,14 @@ enum ToolActions {
                accepts: kinds(.image, .video, .audio),
                run: { ctx in
                    let level = ctx.params.choice("level")
-                   if FileItem(url: ctx.input).kind == .image {
-                       return .files([try await ImageTools.compress(ctx.input, level: level)])
-                   }
-                   return .files([try await MediaEngine.compress(ctx.input, level: level, progress: ctx.progress)])
+                   let output = FileItem(url: ctx.input).kind == .image
+                       ? try await ImageTools.compress(ctx.input, level: level)
+                       : try await MediaEngine.compress(ctx.input, level: level, progress: ctx.progress)
+                   return .smaller(output, than: ctx.input)
                }),
         Action(id: "tool.pdf.compress", title: "Compress", symbol: "arrow.down.right.and.arrow.up.left", mode: .tools,
                accepts: kinds(.pdf),
-               run: { ctx in .files([try PDFEngine.compress(ctx.input)]) }),
+               run: { ctx in .smaller(try PDFEngine.compress(ctx.input), than: ctx.input) }),
         Action(id: "tool.fit", title: "Target Size", symbol: "scope", mode: .tools,
                parameters: [.number("megabytes", "Target size", 0.05...4000, unit: "MB", default: 5)],
                accepts: kinds(.image, .video, .audio),
