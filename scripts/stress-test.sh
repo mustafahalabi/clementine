@@ -210,7 +210,9 @@ pix() { "$H" pix "$@"; }
 pdfi() { "$H" pdfinfo "$1"; }
 vdims() { probe -select_streams v:0 -show_entries stream=width,height "$1" | head -1; }
 dur() { probe -show_entries format=duration "$1"; }
-nstreams() { probe -select_streams "$2" -show_entries stream=index "$1" | wc -l | tr -d ' '; }
+# Top-level streams only: ffprobe 9 also lists the streams inside stream groups (e.g. video + timecode in a MOV),
+# which plain csv output can't tell apart.
+nstreams() { ffprobe -v error -select_streams "$2" -show_entries stream=index -of json "$1" | python3 -c 'import json, sys; print(len(json.load(sys.stdin).get("streams", [])))'; }
 near() { awk -v a="$1" -v b="$2" -v t="${3:-0.3}" 'BEGIN{d=a-b; if(d<0)d=-d; exit !(d<=t)}'; }
 size() { stat -f%z "$1"; }
 

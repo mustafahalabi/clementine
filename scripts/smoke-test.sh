@@ -65,7 +65,7 @@ run() { # run <action-id> [--set k=v]... <files>
     while IFS= read -r line; do
       if [[ -f "$line" ]]; then [[ -s "$line" ]] || problem="empty file: $line"
       elif [[ -d "$line" ]]; then [[ -n "$(ls -A "$line")" ]] || problem="empty folder: $line"
-      else problem="missing output: $line"; fi
+      else problem="missing output: $line (stdout: $(echo "$out" | head -3 | cat -v | tr '\n' '|'))"; fi
     done <<<"$out"
   fi
   if [[ -z "$problem" ]]; then

@@ -47,11 +47,12 @@ test_setup() {
   if [[ -n "${BIN:-}" ]]; then
     cat > "$WORK/clementine" <<WRAP
 #!/usr/bin/env bash
-noise='^IOServiceMatchingfailed for: '
+# The message may lack its newline and run into the next line, so cut it out, then drop lines it left empty.
+strip() { sed -E -e '/^IOServiceMatchingfailed for: [A-Za-z0-9_]+\$/d' -e 's/IOServiceMatchingfailed for: [A-Za-z0-9_]+//g'; }
 err="\$(mktemp "$WORK/stderr.XXXXXX")"
-"$BIN" "\$@" 2>"\$err" | { grep -v "\$noise" || true; }
+"$BIN" "\$@" 2>"\$err" | strip
 status=\${PIPESTATUS[0]}
-grep -v "\$noise" "\$err" >&2; rm -f "\$err"
+strip <"\$err" >&2; rm -f "\$err"
 exit \$status
 WRAP
     chmod +x "$WORK/clementine"

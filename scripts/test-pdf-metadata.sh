@@ -111,7 +111,9 @@ tag() {
   [[ -n "$v" ]] || v="$(ffprobe -v error -select_streams a:0 -show_entries "stream_tags=$2" -of default=nw=1:nk=1 "$1")"
   echo "$v"
 }
-nstreams() { ffprobe -v error -select_streams "$2" -show_entries stream=index -of csv=p=0 "$1" | wc -l | tr -d ' '; }
+# Top-level streams only: ffprobe 9 also lists the streams inside stream groups (e.g. video + timecode in a MOV),
+# which plain csv output can't tell apart.
+nstreams() { ffprobe -v error -select_streams "$2" -show_entries stream=index -of json "$1" | python3 -c 'import json, sys; print(len(json.load(sys.stdin).get("streams", [])))'; }
 
 echo "Page specs"
 expect "plain list unchanged" '[[ "$(pages "$OUT")" == "3|0:P3 0:P1 0:P2" ]]' -- tool.pdf.pages --set "pages=3, 1-2" "$F/five.pdf"
