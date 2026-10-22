@@ -59,12 +59,16 @@ or spaces are fine, if quoted for the shell). Parsing depends on the parameter's
 
 | Type | Parsing | Out-of-range / bad value |
 |---|---|---|
-| number, slider | `Double(value)` | Not a number → `0`. Ranges are **not** enforced by the CLI. The engine may reject the value (for example, Split under 1 s or an impossibly small Target Size) or clamp it (Channels gains to 0…4). |
-| choice | An integer index (0-based), or else an option label matched case-insensitively (`style=black`, `channels=swap`, `"level=best quality"`, `speed=2×`) | Unknown label → **index 0, silently**. Check the catalog below. |
-| text | Taken verbatim (JSON, page specs, time codes) | Validated by the engine, which fails with a readable message |
+| number | `Double(value)` | Not a finite number (`abc`, empty, `nan`, `inf`) → usage error. The parameter's range is **not** enforced: the engine checks the value with a specific message (Split under 1 s, an impossibly small Target Size) or accepts it (Target Size below the sheet's 0.05 MB works for small files). |
+| slider | `Double(value)` | Not a finite number, or outside the slider's range (bounds included, e.g. `exposure` −2…2) → usage error. |
+| choice | An integer index (0-based), or else an option label matched case-insensitively (`style=black`, `channels=swap`, `"level=best quality"`, `speed=2×`) | An index out of range (`speed=99`, `level=-1`) or an unknown label → usage error listing every `index = label`. |
+| text | Taken verbatim (JSON, page specs, time codes); may be empty | Validated by the engine, which fails with a readable message |
 
-An unknown key, or `--set` without `=`, prints `unknown parameter <key> for <id>` to stderr and exits 2. Parameters
-you don't set keep their defaults.
+Usage errors print one line to stderr and exit 2 before anything runs: `speed=99: not a valid choice; use an
+index or label: 0 = 0.25×, …`, `exposure=5: must be between -2 and 2`, `unknown parameter size for tool.fit
+(valid keys: megabytes)`, `--set needs key=value, got "megabytes"` (also for `--set ""` and a trailing `--set`),
+and `unknown option --recrod` for any other `--` argument that isn't an existing file. Parameters you don't set
+keep their defaults.
 
 **`--record`** also does what a wheel drop does: it updates usage counts (wheel ordering) and, if the run produced
 files, adds a history entry. Without it, `--run` leaves no trace.
@@ -84,13 +88,26 @@ file. Output names are reserved while a batch runs, so `dup.png` + `dup.bmp` →
 
 Outputs go next to the input and never overwrite: `photo.jpg`, `photo (compressed).jpg`, `photo (compressed) 2.jpg`.
 
+**Interrupting.** SIGINT (Ctrl-C), SIGTERM and SIGHUP stop the run cleanly: tools such as ffmpeg run in their
+own process group, so Clementine terminates them itself (SIGTERM, then SIGKILL after 3 s for one that ignores
+it), each unfinished output is deleted, and every unfinished file is reported as `cancelled: <file name>` on
+stderr. Files that had already finished are complete and printed as usual. If the work hasn't unwound within
+10 s, remaining tools are killed and outputs still being written are deleted. A second signal skips the wait.
+
+A tool that dies from a signal nobody asked for (a crash, an outside `kill`) is a failure, not a cancellation:
+`error: clip.mov: ffmpeg failed: … ffmpeg stopped unexpectedly (Segmentation fault: 11)`.
+
+While `--run` (or a job in the app) is running, Clementine holds a power assertion ("Clementine is converting
+files", see `pmset -g assertions`) so the Mac doesn't idle to sleep mid-encode.
+
 **Exit codes**
 
 | Code | Meaning |
 |---|---|
 | 0 | Every file succeeded (a text result like "No QR code … found" counts as success) |
-| 1 | At least one file failed |
-| 2 | Usage error: unknown action id (usage printed on stdout), unknown parameter, or fewer files than the action's minimum (`<id> needs at least N files`) |
+| 1 | At least one file failed (including a tool that crashed or was killed from outside), or `--undo` had nothing to undo |
+| 2 | Usage error: unknown action id (usage printed on stdout), unknown parameter or option, a `--set` value that doesn't fit the parameter, fewer files than the action's minimum (`<id> needs at least N files`), a `--render-wheel` without its arguments or with `--hover` not followed by a number |
+| 128 + n | Interrupted by signal n: 130 for SIGINT (Ctrl-C), 143 for SIGTERM, 129 for SIGHUP |
 
 Hidden actions still run from the CLI. `maxInputs` is only a wheel rule: `--run` doesn't check it, but
 single-image editors (Redact, Annotate) process each file separately.
@@ -126,7 +143,8 @@ A design aid that draws the wheel for these files to a PNG without showing anyth
 | `--chip` | With `--click`: the chip in its hovered state |
 
 The output path must come first. It waits about 2 s for the Quick Look thumbnail and the open animation, prints
-the output path and exits 0. With fewer than 2 arguments it prints usage and exits 2. Materials render flat.
+the output path and exits 0. With fewer than 2 arguments it prints usage and exits 2; `--hover` without a
+non-negative number after it exits 2. Materials render flat.
 
 ### `--help`
 

@@ -170,12 +170,23 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
 - `BatchRunner.run`: a `TaskGroup` with a sliding window of `limit` tasks. A private `Tally` (NSLock) tracks
   per-unit fractions → overall progress, the finished count, and the peak concurrency. Debug builds print the
   peak with `CLEMENTINE_TRACE_CONCURRENCY`. Results come back in input order in a `BatchReport`.
-  `CancellationError` sets `cancelled`, and other errors become `failures` (prefixed with the file name when
-  there are several units). The whole run is wrapped in `Output.beginBatch()/endBatch()`.
+  `CancellationError` counts as `cancelled` only if the batch's task was cancelled (otherwise it's a failure,
+  "Stopped unexpectedly."), and other errors become `failures` (prefixed with the file name when there are
+  several units). The whole run is wrapped in `Output.beginBatch()/endBatch()` and holds a
+  `ProcessInfo.beginActivity(.userInitiated, .idleSystemSleepDisabled)` so the Mac doesn't idle to sleep.
 - Cancellation: the card's cancel button, or closing a running card (`windowWillClose`), calls
   `job.task?.cancel()`. Units that haven't started return `CancellationError`. `ProcessRunner`'s
-  `onCancel` terminates the child process, and a process killed by a signal maps back to `CancellationError`.
-  `execute` notices `Task.isCancelled` and closes the card without writing history.
+  `onCancel` marks the child as asked to stop and terminates it; only that mark turns its exit (ffmpeg's 255,
+  or death by SIGTERM) into `CancellationError`. A child that dies of a signal nobody sent is a `toolFailed`
+  ("stopped unexpectedly (Segmentation fault: 11)"). `execute` notices `Task.isCancelled`, records history for
+  any files that had already finished, and closes the card.
+- Quitting and interrupts: `JobRunner.running` lists jobs whose batch is running and `ProcessRunner` keeps a
+  registry of launched children (they lead their own process group, so nothing else would stop them).
+  `AppDelegate.applicationShouldTerminate` returns `.terminateLater` while either is non-empty and runs
+  `JobRunner.stopAll()`; the CLI does the same from `DispatchSource` handlers for SIGINT/SIGTERM/SIGHUP. Both go
+  through `Shutdown.stop`: cancel the work, `ProcessRunner.stopAll` (SIGTERM, SIGKILL to the process group after
+  3 s, and no new launches), wait for the engines to unwind so `Output.produce` deletes their partial outputs,
+  and after 10 s kill whatever is left and `Output.discardInFlight()`.
 - History: `HistoryStore` keeps the newest 50 entries (paths, action ID, title, symbol, date) as pretty-printed
   ISO-8601 JSON. `undoable` is the newest entry that still has at least one output on disk. `undo` moves the
   outputs to the Trash with `FileManager.trashItem` and drops the entry. The card's Undo first checks the entry
@@ -194,7 +205,7 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   `onLine` callback, which ffmpeg progress uses) or to a file (`stdoutFile`, for binary output). Stderr is always
   captured. It finishes when a `DispatchGroup` has seen `terminationHandler` and EOF on both pipes. A non-zero
   exit becomes `ClementineError.toolFailed(name, stderr)`, and `Errors.swift` trims ffmpeg noise out of that
-  message.
+  message. A stop we asked for is a `CancellationError` whatever the exit status (see Cancellation above).
 - **FFmpeg** (`FFmpeg.swift`):
   - `probe`: ffprobe JSON with `format=duration:stream=…:stream_disposition=attached_pic`. It reads duration,
     audio channels, the first real video stream (skipping attached pictures) and subtitle codecs.

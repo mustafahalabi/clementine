@@ -15,15 +15,20 @@ enum ParamValue: Hashable {
 
 struct ParamValues: Hashable {
     var storage: [String: ParamValue] = [:]
+    /// How many options each choice parameter has (filled in by `Action.defaults`), so `choice` can clamp.
+    var choiceCounts: [String: Int] = [:]
 
     func number(_ key: String) -> Double {
         if case .number(let value)? = storage[key] { return value }
         return 0
     }
 
+    /// Clamped to the parameter's options: actions index arrays with it, so a bad value must not crash a job.
+    /// (The CLI rejects out-of-range values before this; it's a backstop.)
     func choice(_ key: String) -> Int {
-        if case .choice(let value)? = storage[key] { return value }
-        return 0
+        guard case .choice(let value)? = storage[key] else { return 0 }
+        let upper = (choiceCounts[key] ?? Int.max) - 1
+        return min(max(value, 0), max(upper, 0))
     }
 
     func text(_ key: String) -> String {
@@ -105,7 +110,11 @@ struct Action: Identifiable {
     let run: (JobContext) async throws -> JobOutput
 
     var defaults: ParamValues {
-        ParamValues(storage: Dictionary(uniqueKeysWithValues: parameters.map { ($0.key, $0.initial) }))
+        var values = ParamValues(storage: Dictionary(uniqueKeysWithValues: parameters.map { ($0.key, $0.initial) }))
+        for parameter in parameters {
+            if case .choice(let options) = parameter.kind { values.choiceCounts[parameter.key] = options.count }
+        }
+        return values
     }
 }
 

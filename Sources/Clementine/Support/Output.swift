@@ -68,12 +68,22 @@ enum Output {
 
     /// Runs `body`, deleting a half-written `url` if it throws.
     static func produce<T>(_ url: URL, _ body: () async throws -> T) async throws -> T {
+        inFlight.withLock { _ = $0.insert(url.path) }
+        defer { inFlight.withLock { _ = $0.remove(url.path) } }
         do {
             return try await body()
         } catch {
             try? FileManager.default.removeItem(at: url)
             throw error
         }
+    }
+
+    /// Outputs being written right now.
+    private static let inFlight = Locked(Set<String>())
+
+    /// Deletes outputs whose writers are still running, for a forced exit that can't wait for them to unwind.
+    static func discardInFlight() {
+        for path in inFlight.withLock({ $0 }) { try? FileManager.default.removeItem(atPath: path) }
     }
 }
 
