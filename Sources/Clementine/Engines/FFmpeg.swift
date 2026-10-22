@@ -69,7 +69,8 @@ enum FFmpeg {
     /// Runs ffmpeg, reporting progress as the fraction of `duration` seconds written so far.
     static func run(_ args: [String], duration: Double?, progress: @escaping (Double) -> Void) async throws {
         let ffmpeg = try ToolLocator.require("ffmpeg")
-        let full = ["-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-nostats", "-progress", "pipe:1"] + args
+        // -n: outputs are always fresh names from Output, so an existing file there belongs to someone else.
+        let full = ["-hide_banner", "-nostdin", "-n", "-loglevel", "error", "-nostats", "-progress", "pipe:1"] + args
         try await ProcessRunner.run(ffmpeg, full) { line in
             guard let duration, duration > 0,
                   line.hasPrefix("out_time_us=") || line.hasPrefix("out_time_ms="),
