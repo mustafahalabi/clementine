@@ -88,6 +88,9 @@ enum UIPreview {
                        appearance: appearance, to: out("result-metadata"))
 
         snapshotWindow(NSHostingController(rootView: SettingsView()), appearance: appearance, to: out("settings"))
+        // As on a short screen: the window stops at the cap and the tab scrolls under the header.
+        snapshotWindow(NSHostingController(rootView: SettingsView(fit: SettingsFit(maxHeight: 640))),
+                       appearance: appearance, to: out("settings-short"))
 
         // Menu bar icon, plain and with the update-available dot, tinted the way the menu bar tints templates.
         let icons = HStack(spacing: 18) {
@@ -139,7 +142,7 @@ enum UIPreview {
         snapshot(NSHostingView(rootView: cards), appearance: appearance, to: out("progress-undo"))
 
         snapshotWindow(NSHostingController(rootView: SettingsView(tab: .wheel)), appearance: appearance, settle: 1.6, to: out("settings-wheel"))
-        let tools = WheelSettingsView(kind: "audio", mode: .tools).frame(width: 520).background(WindowBackdrop()).tint(Theme.tangerine)
+        let tools = WheelSettingsView(kind: "audio", mode: .tools).scrollDisabled(true).fixedSize(horizontal: false, vertical: true).frame(width: 520).background(WindowBackdrop()).tint(Theme.tangerine)
         snapshotWindow(NSHostingController(rootView: tools), appearance: appearance, settle: 1.6, to: out("settings-wheel-tools"))
     }
 
@@ -173,7 +176,7 @@ enum UIPreview {
                                      onApply: { _ in }, onCancel: {}, presetName: PresetStore.suggestedName(for: fit, values: values))
             snapshotWindow(NSHostingController(rootView: form), appearance: appearance, to: out("parameters-save-preset"))
         }
-        let files = WheelSettingsView(kind: "image", mode: .files).frame(width: 520).background(WindowBackdrop()).tint(Theme.tangerine)
+        let files = WheelSettingsView(kind: "image", mode: .files).scrollDisabled(true).fixedSize(horizontal: false, vertical: true).frame(width: 520).background(WindowBackdrop()).tint(Theme.tangerine)
         snapshotWindow(NSHostingController(rootView: files), appearance: appearance, settle: 1.6, to: out("settings-wheel-files"))
     }
 

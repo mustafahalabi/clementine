@@ -72,7 +72,7 @@ extension UITest {
                 guard let first = try? PresetStore.shared.add(name: "Small", action: "tool.image.resize", values: ["size": "25%"]),
                       let second = try? PresetStore.shared.add(name: "Tiny", action: "tool.compress", values: ["level": "Smallest"])
                 else { return t.check(false, "presets can be added") }
-                let view = WheelSettingsView(kind: "image", mode: .tools).frame(width: 520).background(WindowBackdrop())
+                let view = WheelSettingsView(kind: "image", mode: .tools).scrollDisabled(true).fixedSize(horizontal: false, vertical: true).frame(width: 520).background(WindowBackdrop())
                 let window = t.open(view, size: NSSize(width: 520, height: 760))
                 t.settle(0.8)
 

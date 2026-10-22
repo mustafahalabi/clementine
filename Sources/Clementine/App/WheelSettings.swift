@@ -136,8 +136,6 @@ struct WheelSettingsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .scrollDisabled(true)
-        .fixedSize(horizontal: false, vertical: true)
         .onAppear { refresh(replay: true) }
         .onChange(of: group) { refresh(replay: true) }
         .onChange(of: mode) { refresh(replay: true) }
