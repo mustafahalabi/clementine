@@ -58,7 +58,8 @@ enum BatchRunner {
                         progress(tally.update(index, fraction), tally.finished)
                     }
                     do {
-                        return (index, .success(try await action.run(context)))
+                        // Outputs are written under hidden names and renamed only once the unit succeeds (see `Output.atomically`).
+                        return (index, .success(try await Output.atomically { try await action.run(context) }))
                     } catch {
                         return (index, .failure(error))
                     }

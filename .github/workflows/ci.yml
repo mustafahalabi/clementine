@@ -102,6 +102,10 @@ jobs:
           APP_BIN=build/Clementine.app/Contents/MacOS/Clementine
           "$APP_BIN" --help
           test -x build/Clementine.app/Contents/Resources/bin/ffmpeg
+          # Shortcuts only sees the intents through this metadata, which bundle.sh generates (SwiftPM doesn't).
+          for intent in ConvertWithClementineIntent RemoveBackgroundIntent ConvertImagesIntent; do
+            grep -q "\"$intent\"" build/Clementine.app/Contents/Resources/Metadata.appintents/extract.actionsdata
+          done
           # A Settings tools folder must win over the bundled tools (users can swap in their own ffmpeg).
           FAKE="$(mktemp -d)"; MARK="$FAKE/used"
           printf '#!/bin/sh\ntouch "%s"\nexit 1\n' "$MARK" > "$FAKE/ffprobe"; chmod +x "$FAKE/ffprobe"

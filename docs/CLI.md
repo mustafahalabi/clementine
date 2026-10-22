@@ -37,7 +37,7 @@ Tools (⌥⇧)
 ```
 
 - Shows visible slices in wheel order (most used first, see [Usage and history](#usage-history-and-settings)),
-  at most 12 per wheel, then any slices hidden in Settings › Wheel, marked `(hidden)`.
+  at most 13 per wheel, then any slices hidden in Settings › Wheel, marked `(hidden)`.
 - An action appears only if every file matches its accepted kinds and the file count is within its min/max inputs.
 - The archive actions (`archive.zip/tar/gzip`) are added to the convert wheel when nothing else applies, or when
   every item is a folder or an unknown type. A mix like image + audio therefore gets archives on ⇧ and only the
@@ -301,6 +301,7 @@ Listed in wheel order. *Editor* means the app opens a custom window, which produ
 | `tool.image.redact` | Redact (editor) | image | 1–1 | no | `boxes` (text, JSON or `auto`) empty, required; `style` (choice) 0: 0 Pixelate, 1 Blur, 2 Black |
 | `tool.image.annotate` | Annotate (editor) | image | 1–1 | no | `shapes` (text, JSON) empty, required |
 | `tool.image.background` | Add BG (live preview) | image | 1+ | no | `background` (choice) 0: 0 Sunset, 1 Ocean, 2 Mint, 3 Lavender, 4 Sky, 5 White, 6 Graphite; `padding` (slider) 0.08 (0…0.3, fraction of the long edge); `corners` (slider) 0.02 (0…0.1); `shadow` (choice) 0: 0 On, 1 Off |
+| `tool.image.removebg` | Cut Out Subject (live preview) | image except svg | 1+ | no | `format` (choice) 0: 0 PNG, 1 HEIC, 2 WebP (all keep transparency; WebP needs `cwebp`); `crop` (choice) 0: 0 Off, 1 On (crop to the subject). Vision subject lifting, on-device; fails with "No subject found" when there's nothing to lift. Output `<name> (cut out).<ext>`. |
 | `tool.image.qr` | Read QR | image | 1+ | no | none. Text result. |
 | `tool.image.collage` | Collage | image | 2+ | **yes** | `layout` (choice) 0: 0 Grid, 1 Row, 2 Column |
 | `tool.image.pdf` | Make PDF | image | 2+ | **yes** | none |
@@ -324,7 +325,7 @@ Listed in wheel order. *Editor* means the app opens a custom window, which produ
 | `tool.metadata` | Metadata (editor) | image, video, audio, pdf | 1+ | no | `fields` (text, JSON) empty. With it empty, the run shows all metadata as a text result. Otherwise it saves an `(edited)` copy. |
 | `tool.metadata.strip` | Remove Metadata | image, video, audio, pdf | 1+ | no | none |
 
-The wheel shows at most 12 slices. A single image matches exactly 12 tools. With two or more images, Redact and
+The wheel shows at most 13 slices. A single image matches exactly 13 tools. With two or more images, Redact and
 Annotate drop out and Collage and Make PDF come in.
 
 ### Text parameter formats

@@ -28,12 +28,12 @@ which it uses (`Clementine uses tools in …`). Fixtures are always made with th
 | `smoke-test.sh` | Every action at least once, mostly with defaults: all convert targets (image, media, document, PDF, subtitle, archive), every tool on images, video/audio and PDF. Passes if the run exits 0 and every output path it prints exists and isn't empty (text results must have a body). | 94 | ~12 s |
 | `edge-test.sh` | Odd names (quotes, unicode, leading dash, spaces), portrait/odd-sized/rotated video, cover-art MP3s, EXIF orientation + GPS, gray/CMYK/16-bit images, multi-page PDFs and page specs, HTML/RTF/DOC/MD/Latin-1 documents, VTT/CRLF subtitles, archive naming, repacking (incl. `convert.archive.gzip`) and staging, broken input. Asserts on the result. | 89 | ~11 s |
 | `stress-test.sh` | Adversarial: timecode/location MOVs, subtitles and two audio tracks in containers, 0.1 s video, audio-only `.mp4`, 0-byte files (and nothing left behind on failure), 12000×8000 and 1×1 images, alpha, Display P3, animations, collage geometry, rotated/cropped/locked PDFs, uppercase/missing extensions, dotted folder names, archive edge cases, odd trim/split/bleep values, `--list` contents. | 162 | ~25 s |
-| `test-image-editor.sh` | The Crop/Redact/Annotate engines driven by editor JSON: geometry, rotation, clipping, pixel checks inside/outside boxes, `auto` redaction, each annotation kind, format and animation preservation, error messages, wheel contents for 1 vs 2 images. | 54 | ~6 s |
+| `test-image-editor.sh` | The Crop/Redact/Annotate engines driven by editor JSON: geometry, rotation, clipping, pixel checks inside/outside boxes, `auto` redaction, each annotation kind, format and animation preservation, error messages, wheel contents for 1 vs 2 images. Cut Out Subject on a generated ball-on-backdrop image (alpha outside, subject untouched, crop, HEIC/WebP alpha, "No subject found"); the Vision checks print `SKIP` on CI (`GITHUB_ACTIONS`/`CI` set) if the subject model can't run there, never locally. `ShortcutRunner` through the debug `--shortcut-run` (output order, `key=value` settings, text results, every refusal message). | 71 | ~8 s |
 | `test-waveform.sh` | Channels (layouts, gains, RMS levels per channel, 5.1), Bleep on audio and video (picture copied, tone inside/silence outside, codecs), Trim with editor-style ms times, and `--render-ui` of the Trim/Bleep/Channels editors in light and dark. The renders are skipped only when there's no GUI session (`launchctl managername` isn't `Aqua`, e.g. over ssh); a crash or non-zero exit fails the suite. | 32 | ~75 s (≈65 s is `--render-ui`) |
 | `test-pdf-metadata.sh` | Page specs (`3r90`, `r-90`, bare `r90`, duplicates, `1:` prefix, rotation adding up) and merge specs (`2:1-3`, cross-file numbering, error wording). Metadata writers for JPG/PNG/HEIC, MP3/M4A/Opus/FLAC/MOV and PDF: round-trips, clearing, no re-encoding, date/year/track/rating validation. | 70 | ~9 s |
 | `test-productivity.sh` | Wheel ordering from `--record`ed usage (per kind and mode, `orderByUsage` off), hidden slices, history (JSON, 50 cap, order, undo, skip-gone, clear), parallel batches (order, concurrency limits via `CLEMENTINE_TRACE_CONCURRENCY`, collision-free names, partial failure exit 1). Uses a scratch defaults suite and support dir. | 34 | ~6 s |
 | `test-video.sh` | HLG/PQ fixtures (10-bit HEVC; made with the bundled ffmpeg's zscale when available): tone-mapping to BT.709 for every SDR output (tags plus a luma/saturation check against washed-out passthrough), also through the no-zscale fallback with Homebrew's ffmpeg; HDR kept as `hvc1` 10-bit HEVC by Trim/Speed/Rotate/Join; VideoToolbox used (no x264 SEI), the x264/x265 fallback through a fake ffmpeg that refuses VideoToolbox, `--software`, the Settings toggle, Compress on x264; Join canvas with display-matrix rotation and frame rates; GIF fps/width/target size; Trim/Speed/Rotate on TS/FLV/3GP/MPG. | 58 | ~30 s |
-| `test-lifecycle.sh` | Process lifecycle: SIGINT/SIGTERM/SIGHUP during a long encode (exit 128 + n, ffmpeg gone, no output or partial left, power assertion held), a tool that ignores SIGTERM (SIGKILL after the grace period), a second signal, fake tools that crash, get killed or exit 255 by themselves (failures, exit 1), and `--set`/`--hover` validation (exit 2). Fake tools go in through the `toolsDirectory` setting in a scratch defaults suite. | 50 | ~30 s |
+| `test-lifecycle.sh` | Process lifecycle: SIGINT/SIGTERM/SIGHUP during a long encode (exit 128 + n, ffmpeg gone, no output or partial left, power assertion held), SIGKILL mid-encode (the output only ever exists as a hidden `.clementine-*` temporary; the next launch removes it and drops the folder from the in-progress journal), what the sweep keeps (live owner, look-alike names, folders not in the journal), the final name being taken during a write (next free name), failed writes (temporary gone, real name in the message), a tool that ignores SIGTERM (SIGKILL after the grace period), a second signal, fake tools that crash, get killed or exit 255 by themselves (failures, exit 1), and `--set`/`--hover` validation (exit 2). Fake tools go in through the `toolsDirectory` setting in a scratch defaults suite. | 67 | ~30 s |
 
 \* Measured on an M4 Pro (12 cores), macOS 26.1, warm build: about 585 checks, about 3 minutes in total. Counts
 are the `N passed` line of each suite, so they change as cases are added.
@@ -93,7 +93,8 @@ per ref; newer pushes cancel older runs). The job is called `test`, which is the
 3. All the suites, each its own step. They run even if an earlier suite failed, so the run shows every
    suite's result; any failure fails the job. Clementine uses the bundled tools from `vendor/bin`.
 4. `scripts/bundle.sh debug`: the bundled binary's `--help` (Sparkle embeds and links), the tools are in
-   `Contents/Resources/bin`, and a Settings tools folder is searched before them.
+   `Contents/Resources/bin`, the App Intents metadata (`Contents/Resources/Metadata.appintents`) lists the three
+   Shortcuts actions (`bundle.sh` itself fails without it), and a Settings tools folder is searched before them.
 5. `make ui-test` with `continue-on-error`: an experiment to see whether the off-screen harness runs on GitHub's
    runners. It never fails the job; check its log.
 
@@ -215,6 +216,14 @@ them. Test the bundled app (`make install` copies it to `/Applications`):
 - [ ] **Reopen**: with Clementine running, open it again from Finder or Spotlight. Settings comes forward (the
       welcome tour instead if it was never finished or closed).
 - [ ] **Idle CPU**: with the app idle and no wheel showing, `top -l 5 -pid $(pgrep -x Clementine)` stays at ~0 %.
+- [ ] **Shortcuts**: with the app installed in /Applications (`make install`) and launched once, open Shortcuts,
+      search the action list for "Clementine". *Convert with Clementine*, *Remove Background with Clementine* and
+      *Convert Images with Clementine* are listed. Build a shortcut: *Get Selected Files in Finder* (or a *File*
+      action) → *Convert with Clementine*; with an image as input, the Action picker lists image actions only
+      ("Convert to PNG", "Cut Out Subject" …). Run it with Clementine running and again after quitting it: the
+      result appears next to the original, no Clementine window opens, and the shortcut's output shows the new
+      file. A wrong `key=value` in Settings shows Clementine's message. Also check *Remove Background* on a photo
+      of a person or pet (PNG, crop on) and *Convert Images* on a mixed selection.
 - [ ] **VoiceOver**: with the click-mode wheel open (Services), VoiceOver reads "Convert wheel for …" and the
       highlighted slice as the arrow keys move; a finished or failed job is announced.
 

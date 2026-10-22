@@ -62,6 +62,10 @@ enum UIPreview {
             let form = ParameterForm(action: edit, urls: urls, values: values, onApply: { _ in }, onCancel: {})
             snapshotWindow(NSHostingController(rootView: form), appearance: appearance, settle: 1.5, to: out("parameters-preview"))
         }
+        if let cutOut = ActionRegistry.find("tool.image.removebg"), let image {
+            let form = ParameterForm(action: cutOut, urls: [image], values: cutOut.defaults, onApply: { _ in }, onCancel: {})
+            snapshotWindow(NSHostingController(rootView: form), appearance: appearance, settle: 2, to: out("parameters-cutout"))
+        }
         if let fit = ActionRegistry.find("tool.fit") {
             let form = ParameterForm(action: fit, urls: [URL(fileURLWithPath: "/tmp/clip.mov")], values: fit.defaults,
                                      onApply: { _ in }, onCancel: {})
@@ -84,6 +88,17 @@ enum UIPreview {
                        appearance: appearance, to: out("result-metadata"))
 
         snapshotWindow(NSHostingController(rootView: SettingsView()), appearance: appearance, to: out("settings"))
+
+        // Menu bar icon, plain and with the update-available dot, tinted the way the menu bar tints templates.
+        let icons = HStack(spacing: 18) {
+            ForEach([false, true], id: \.self) { badged in
+                Image(nsImage: MenuBarIcon.image(badged: badged)).renderingMode(.template).scaleEffect(2)
+                    .frame(width: 44, height: 44)
+            }
+        }
+        .padding(12)
+        .background(Color(nsColor: .windowBackgroundColor))
+        snapshot(NSHostingView(rootView: icons), appearance: appearance, to: out("menubar-icon"))
 
         // Welcome tour, one PNG per page (demo frozen on a hovered slice).
         for page in 0..<OnboardingView.pageCount {
