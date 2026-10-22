@@ -347,7 +347,7 @@ Listed in wheel order. *Editor* means the app opens a custom window, which produ
 | `tool.metadata` | Metadata (editor) | image, video, audio, pdf | 1+ | no | `fields` (text, JSON) empty. With it empty, the run shows all metadata as a text result. Otherwise it saves an `(edited)` copy. |
 | `tool.metadata.strip` | Remove Metadata | image, video, audio, pdf | 1+ | no | none |
 
-The wheel shows at most 12 slices. A single image matches exactly 12 tools. With two or more images, Redact and
+The wheel shows at most 12 slices, presets included. A single image matches exactly 12 tools. With two or more images, Redact and
 Annotate drop out and Collage and Make PDF come in.
 
 ### File actions wheel (⌃)
