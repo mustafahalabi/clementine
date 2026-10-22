@@ -113,7 +113,7 @@ fake_ffmpeg 'echo "about to crash" >&2; kill -SEGV $$'
 before="$(listing)"
 out="$("$BIN" --run convert.media.mp3 "$F/tone.wav" 2>&1)"; status=$?
 check "crashing tool: exits 1, not 0" '[[ $status -eq 1 ]]' "exit $status: $out"
-check "crashing tool: says it crashed" '[[ "$out" == *"ffmpeg failed"*"stopped unexpectedly (Segmentation fault"* ]]' "$out"
+check "crashing tool: says it crashed" '[[ "$out" == *"stopped unexpectedly"*"ffmpeg said:"*"stopped unexpectedly (Segmentation fault"* ]]' "$out"
 check "crashing tool: nothing left behind" '[[ "$(listing)" == "$before" ]]'
 
 fake_ffmpeg 'kill -KILL $$'

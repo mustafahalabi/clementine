@@ -201,7 +201,9 @@ expect_error() {
   shopt -s nocasematch
   if [[ "$out" != *"$needle"* ]]; then shopt -u nocasematch; bad "$name" "unexpected message: $out"; return; fi
   shopt -u nocasematch
-  if [[ "$out" == *"ffmpeg failed"* || "$out" == *"ffprobe failed"* || "$out" == *"tar failed"* || "$out" == *"gzip failed"* ]]; then
+  # Tool failures read "<plain sentence>\n<tool> said: …" (older builds: "<tool> failed: …").
+  if [[ "$out" == *"ffmpeg failed"* || "$out" == *"ffprobe failed"* || "$out" == *"tar failed"* || "$out" == *"gzip failed"* ||
+        "$out" == *"ffmpeg said:"* || "$out" == *"ffprobe said:"* || "$out" == *"tar said:"* || "$out" == *"gzip said:"* ]]; then
     bad "$name" "raw tool error: $out"; return
   fi
   ok "$name"

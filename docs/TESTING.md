@@ -100,7 +100,7 @@ covering its Close button; the stack is parked off-screen through `ProgressPanel
 `error copy` (brew hints only without bundled tools, `brew install webp` for img2webp, plain-sentence ffmpeg
 failures, the "Text (OCR)" slice), `midline` (clicks on a control's exact center land, across button styles and
 the chip picker) and `lifecycle quit` (a running encode stopped the way quitting stops it: no tool, job or partial
-output left; it runs last because it refuses tool launches afterwards): CHECKS checks,
+output left; it runs last because it refuses tool launches afterwards): 51 checks,
 about 25 s.
 
 **Writing a suite.** Add a file in `Sources/Clementine/Testing/` that extends `UITest` with
