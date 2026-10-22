@@ -15,14 +15,14 @@ enum ToolActions {
                accepts: kinds(.image, .video, .audio),
                run: { ctx in
                    let level = ctx.params.choice("level")
-                   if FileItem(url: ctx.input).kind == .image {
-                       return .files([try await ImageTools.compress(ctx.input, level: level)])
-                   }
-                   return .files([try await MediaEngine.compress(ctx.input, level: level, progress: ctx.progress)])
+                   let output = FileItem(url: ctx.input).kind == .image
+                       ? try await ImageTools.compress(ctx.input, level: level)
+                       : try await MediaEngine.compress(ctx.input, level: level, progress: ctx.progress)
+                   return .smaller(output, than: ctx.input)
                }),
         Action(id: "tool.pdf.compress", title: "Compress", symbol: "arrow.down.right.and.arrow.up.left", mode: .tools,
                accepts: kinds(.pdf),
-               run: { ctx in .files([try PDFEngine.compress(ctx.input)]) }),
+               run: { ctx in .smaller(try PDFEngine.compress(ctx.input), than: ctx.input) }),
         Action(id: "tool.fit", title: "Target Size", symbol: "scope", mode: .tools,
                parameters: [.number("megabytes", "Target size", 0.05...4000, unit: "MB", default: 5)],
                accepts: kinds(.image, .video, .audio),
@@ -97,6 +97,18 @@ enum ToolActions {
                preview: { url, params in ImageTools.preview(url) { try ImageTools.withBackground($0, params) } },
                accepts: kinds(.image),
                run: { ctx in .files([try await ImageTools.addBackground(ctx.input, params: ctx.params)]) }),
+        Action(id: "tool.image.removebg", title: "Cut Out Subject", symbol: "person.and.background.dotted", mode: .tools,
+               maxConcurrent: 2, // Vision's model is memory-hungry on big photos
+               parameters: [
+                   .choice("format", "Save as", BackgroundRemover.formatNames),
+                   .choice("crop", "Crop to subject", ["Off", "On"]),
+               ],
+               preview: { url, params in
+                   ImageTools.preview(url) { try BackgroundRemover.cutOut($0, crop: params.choice("crop") == 1) }
+               },
+               accepts: { $0.kind == .image && $0.ext != "svg" },
+               run: { ctx in .files([try await BackgroundRemover.removeBackground(ctx.input, format: ctx.params.choice("format"),
+                                                                                  crop: ctx.params.choice("crop") == 1)]) }),
         Action(id: "tool.image.qr", title: "Read QR", symbol: "qrcode.viewfinder", mode: .tools,
                accepts: kinds(.image),
                run: { ctx in .text(title: ctx.input.lastPathComponent, body: try ImageEngine.readCodes(ctx.input)) }),
@@ -110,6 +122,9 @@ enum ToolActions {
     ]
 
     // MARK: Video & audio
+
+    static let gifRates = [10, 12, 15, 24, 30]
+    static let gifWidths: [Int?] = [320, 480, 640, 720, 960, 1280, nil]
 
     static let media: [Action] = [
         Action(id: "tool.media.trim", title: "Trim", symbol: "timeline.selection", mode: .tools,
@@ -144,6 +159,20 @@ enum ToolActions {
         Action(id: "tool.video.join", title: "Join", symbol: "link", mode: .tools, minInputs: 2, batch: true,
                accepts: kinds(.video),
                run: { ctx in .files([try await MediaEngine.joinVideos(ctx.inputs, progress: ctx.progress)]) }),
+        Action(id: "tool.video.gif", title: "GIF", symbol: "photo.stack", mode: .tools,
+               parameters: [
+                   .choice("fps", "Frame rate", gifRates.map { "\($0) fps" }, default: 2),
+                   .choice("width", "Width", gifWidths.map { $0.map { "\($0) px" } ?? "Original" }, default: 3),
+                   .number("megabytes", "Max size (0 = any)", 0...500, unit: "MB", default: 0),
+               ],
+               accepts: kinds(.video),
+               run: { ctx in
+                   let options = FFmpeg.GIFOptions(fps: gifRates[ctx.params.choice("fps")], width: gifWidths[ctx.params.choice("width")])
+                   let megabytes = ctx.params.number("megabytes")
+                   return .files([try await MediaEngine.gif(ctx.input, options: options,
+                                                            maxBytes: megabytes > 0 ? megabytes * 1_000_000 : nil,
+                                                            progress: ctx.progress)])
+               }),
         Action(id: "tool.audio.normalize", title: "Normalize", symbol: "waveform", mode: .tools,
                accepts: kinds(.audio),
                run: { ctx in .files([try await MediaEngine.normalize(ctx.input, progress: ctx.progress)]) }),

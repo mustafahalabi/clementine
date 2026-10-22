@@ -55,11 +55,11 @@ Process entry (`App/ClementineApp.swift`, `Entry.main`): debug-only `--render-ui
 
 | Folder | Key types |
 | --- | --- |
-| `App/` | `Entry`/`ClementineApp`/`AppDelegate` (entry, menu bar). `CLI` (headless commands). `ServiceProvider` (Finder Services). `Updater` (Sparkle wrapper). `HistoryMenu` (Open Files…, Recent, Undo). `SettingsWindow` (General + Wheel tabs), `WheelSettings` (`WheelCatalog`, `WheelPrefs`, live preview, `PresetsModel` and the Presets section). `PresetsCLI` (`--list-presets`, `--save-preset`, …). `OnboardingWindow` (welcome tour, launch-at-login via `SMAppService`). |
+| `App/` | `Entry`/`ClementineApp`/`AppDelegate` (entry, menu bar). `CLI` (headless commands). `ServiceProvider` (Finder Services). `Updater` (Sparkle wrapper). `HistoryMenu` (Open Files…, Recent, Undo). `SettingsWindow` (General + Wheel tabs), `WheelSettings` (`WheelCatalog`, `WheelPrefs`, live preview, `PresetsModel` and the Presets section). `PresetsCLI` (`--list-presets`, `--save-preset`, …). `OnboardingWindow` (welcome tour, launch-at-login via `SMAppService`). `Shortcuts.swift`: App Intents (`ConvertWithClementineIntent`, `RemoveBackgroundIntent`, `ConvertImagesIntent`, `ClementineActionEntity` + query) over `ShortcutRunner`. |
 | `Drag/` | `DragMonitor` (detects file drags + modifiers), `WheelController` (glue: monitor → panel → `JobRunner`; also `--demo-wheel`, `openFiles()`, `showClickable`). |
 | `Wheel/` | `WheelPanel` (+ private `WheelWindow`, `DropCatcher`), `WheelModel` (actions, geometry, hit-testing, thumbnail), `WheelView` (SwiftUI ring, `Slice` shape, `Hub`, `ModeChip`, `EmptyNotice`). |
 | `Actions/` | `Action`, `Parameter`, `ParamValue(s)`, `JobContext`, `JobOutput`, `Editor`, `WheelMode`, `ActionRegistry` (`Action.swift`). Catalogs: `ConvertActions`, `ToolActions`, `FileActions` (the ⌃ wheel, plus `FileEffects` for Terminal/Finder/AirDrop). `Presets.swift`: `Preset`, `PresetStore` (`presets.json`, validation, editing). `WheelOrdering.swift`: `HiddenActions`, `ActionUsage` (frecency). |
-| `Engines/` | `ImageEngine` (ImageIO load/encode, `ImageFormat`), `ImageTools` (⌥⇧ image tools, Core Image), `ImageEdits` (full-res crop/redact/annotate from JSON), `PDFEngine` (PDFKit, page specs), `DocumentEngine` (`@MainActor`, AppKit text system), `MediaEngine` + `FFmpeg` (probe, encode args, progress), `ArchiveEngine` (system zip/bsdtar/gzip/bzip2), `SubtitleEngine`, `MetadataEngine` (read/write common fields, `(edited)` copies), `ProcessRunner` + `ToolLocator`. |
+| `Engines/` | `ImageEngine` (ImageIO load/encode, `ImageFormat`), `ImageTools` (⌥⇧ image tools, Core Image), `ImageEdits` (full-res crop/redact/annotate from JSON), `BackgroundRemover` (Vision subject lifting for Cut Out Subject), `PDFEngine` (PDFKit, page specs), `DocumentEngine` (`@MainActor`, AppKit text system), `MediaEngine` + `FFmpeg` (probe, encode args, progress), `ArchiveEngine` (system zip/bsdtar/gzip/bzip2), `SubtitleEngine`, `MetadataEngine` (read/write common fields, `(edited)` copies), `ProcessRunner` + `ToolLocator`. |
 | `ImageEditor/` | `ImageEditorWindow` (panel + `EditorShell`), `EditorCanvas` (`EditorImage`, `CanvasMapping`, `RectHandle`, toolbar pieces), `CropEditor`, `RedactEditor`, `AnnotateEditor`. |
 | `Waveform/` | `Waveform` + `WaveformLoader` (peaks, in-memory cache), `Playback` (AVPlayer, `PreviewRenders` in a temp folder), `WaveformEditorModel` (`EditorModel.swift`), `WaveformViews` (shared views, `EditorWindow`), `TrimEditor`, `BleepEditor`, `ChannelsEditor`. |
 | `Jobs/` | `JobRunner`/`RunningJob`, `BatchRunner`/`BatchReport`, `HistoryStore`/`HistoryEntry` (`History.swift`), `ProgressPanel`/`JobView`, `ParameterWindow`/`ParameterForm`, `ResultWindow`, `PageOrganizer`, `MetadataEditor`, `UIPreviewRenderer` (debug `--render-ui`). |
@@ -144,8 +144,8 @@ wheel.
 - `candidates(for:mode:)` keeps the actions from `catalog(mode)` where the selection count fits
   `minInputs...maxInputs` and every `FileItem` passes `accepts`. In convert mode it adds the `archive.*` actions
   when nothing else matched, or when everything is a folder or `.other`.
-- `actions(for:mode:)` drops `HiddenActions.ids`, sorts with `ActionUsage.arrange`, and keeps the first **12**
-  ("so labels stay readable").
+- `actions(for:mode:)` drops `HiddenActions.ids`, sorts with `ActionUsage.arrange`, and keeps the first
+  `ActionRegistry.maxSlices` (**13**, presets included) "so labels stay readable".
 - Frecency (`WheelOrdering.swift`): each use adds 1 to a score that halves every 14 days. Scores live in
   UserDefaults `actionUsage` as `[bucket: [actionID: [score, lastUsed]]]`, where the bucket is
   `"<kind>.<convert|tools|files>"`, or `mixed.*` when the selection has different kinds. Ties keep catalog order. The
@@ -188,10 +188,13 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   otherwise `execute` directly with the defaults.
 - `JobRunner.execute`: creates a `RunningJob` (observable state), shows a `ProgressPanel` card, records usage,
   then calls `BatchRunner.run` inside a `Task` stored on `job.task`. Progress callbacks hop to the main actor,
-  and progress never goes backwards. With several units the detail line reads "n of N done". When it finishes:
+  and progress never goes backwards. With several units the detail line reads "n of N done". Units that return
+  `JobOutput.unchanged(note)` (Compress whose result wasn't smaller, see `JobOutput.smaller`) wrote nothing on
+  purpose: they land in `BatchReport.notes`, the card's detail line shows the note (`JobRunner.note`, up to two
+  lines) and stays 4 s, and the CLI prints `kept: <file>: <note>` on stderr. When it finishes:
   reveal the files in Finder (`Prefs.revealInFinder`), open a `ResultWindow` for each text output, copy
   `.value` results (joined by newlines) to the clipboard and show them on the card (`RunningJob.result`; the card
-  stays 5 s), put `.done` messages in the card's detail line, write a
+  stays 5 s), put `.done` messages (`BatchReport.messages`) in the card's detail line, write a
   history entry, and offer Undo on the card. The card closes after 1.2 s, or 5 s if Undo is available. Hovering
   keeps it open (`ProgressPanel.close(after:)`). A failure leaves the card open with the messages; `JobView`
   shows the first `JobView.collapsedLines` (4) lines and a "Show details…" link that opens the rest in a
@@ -203,12 +206,16 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
 - `BatchRunner.limit`: `cores = max(1, activeProcessorCount / 2)`. `maxConcurrent` is capped at `cores`. Any
   video or audio in the units means `min(2, cores)` (ffmpeg is already multithreaded); everything else gets
   `cores`.
+- `MemoryBudget` (actor, `BatchRunner.swift`): shared by every batch; each unit acquires its weight (largest image's
+  pixels × 4 bytes × 3, from the header) before it starts, FIFO, capped at the budget so an oversized image runs
+  alone. Capacity is a quarter of RAM within 1–6 GB (`CLEMENTINE_MEMORY_BUDGET_MB` in debug builds).
 - `BatchRunner.run`: a `TaskGroup` with a sliding window of `limit` tasks. A private `Tally` (NSLock) tracks
   per-unit fractions → overall progress, the finished count, and the peak concurrency. Debug builds print the
   peak with `CLEMENTINE_TRACE_CONCURRENCY`. Results come back in input order in a `BatchReport`.
   `CancellationError` counts as `cancelled` only if the batch's task was cancelled (otherwise it's a failure,
   "Stopped unexpectedly."), and other errors become `failures` (prefixed with the file name when there are
-  several units). The whole run is wrapped in `Output.beginBatch()/endBatch()` and holds a
+  several units). Each unit runs inside `Output.atomically` (outputs staged under hidden names, renamed on
+  success; see Output). The whole run is wrapped in `Output.beginBatch()/endBatch()` and holds a
   `ProcessInfo.beginActivity(.userInitiated, .idleSystemSleepDisabled)` so the Mac doesn't idle to sleep.
 - Cancellation: the card's cancel button, or closing a running card (`windowWillClose`), calls
   `job.task?.cancel()`. Units that haven't started return `CancellationError`. `ProcessRunner`'s
@@ -260,15 +267,27 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   keeping the tool's own lines below it as "ffmpeg said: …". A stop we asked for is a `CancellationError`
   whatever the exit status (see Cancellation above).
 - **FFmpeg** (`FFmpeg.swift`):
-  - `probe`: ffprobe JSON with `format=duration:stream=…:stream_disposition=attached_pic`. It reads duration,
-    audio channels, the first real video stream (skipping attached pictures) and subtitle codecs.
+  - `probe`: ffprobe JSON with `format=duration:stream=…:stream_disposition=attached_pic:stream_side_data=rotation`.
+    It reads duration, audio channels, the first real video stream (skipping attached pictures) with its colour
+    tags and display-matrix rotation (`isHDR`, `displayWidth/Height`), and subtitle codecs.
   - `readable`: rejects empty files and files with no audio or video.
   - `run`: adds `-hide_banner -nostdin -n -loglevel error -nostats -progress pipe:1` and turns `out_time_us=`
     into a fraction of the duration. `-n` because outputs always come from `Output`: a file already at that path
     isn't ours, so ffmpeg must fail rather than overwrite it.
-  - `transcode`: wraps the run in `Output.produce`.
-  - `encodeArgs`: per-container codec presets, with even-size scaling for H.264/MPEG-4/WMV and a palette
-    pipeline for GIF. `streamMaps` keeps every stream and converts subtitles per container.
+  - `transcode`: wraps the run in `Output.produce`; with `hardware: true` it goes through `encode`.
+  - `encode` + `Hardware`: rewrites software x264/x265 CRF settings for `h264_videotoolbox`/`hevc_videotoolbox`
+    (`-q:v`, calibrated with VMAF: CRF 20 ≈ q 65) when Settings › Use hardware encoding for video is on and the CLI wasn't
+    given `--software`. If VideoToolbox fails, the partial output is deleted and the software args run. Engines
+    keep writing plain x264 args; Compress and Target Size don't ask for hardware (x264 is ~25% smaller at equal
+    quality, and two-pass has no VideoToolbox equivalent).
+  - `color(for:ext:keepHDR:)` → `Color`: `.unchanged` for SDR, `.toneMap(filters)` for HDR into 8-bit outputs
+    (zscale + tonemap mobius when the ffmpeg has them, checked once per ffmpeg path with `hasFilter`; otherwise a
+    PQ/HLG → BT.709 lutrgb curve plus `colorspace`), or `.hdr` to keep 10-bit HEVC (`hevcHDR`) for edits into
+    MP4/M4V/MOV. Tone-mapped outputs get BT.709 tags.
+  - `encodeArgs`: per-container codec presets (H.264 + AAC also for TS/FLV/3GP, MPEG-2 for MPG), with even-size
+    scaling and the `Color` plan. `gifArgs` is the GIF pipeline (fps, width, one `stats_mode=diff` palette,
+    sierra2_4a dithering redrawn only where frames change). `streamMaps` keeps every stream and converts
+    subtitles per container.
   - `atempo` chains filters to stay within 0.5…2.
 - **Output** (`Support/Output.swift`):
   - `file(beside:name:suffix:ext:)` writes next to the input, e.g. `photo (compressed).jpg`, and never
@@ -281,6 +300,33 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
     pruned when the set grows past 256, and the set is cleared when the last batch ends.
   - `produce(url)` deletes a half-written output if the body throws, and `filling(folder)` does the same for
     output folders.
+- **BackgroundRemover** (`BackgroundRemover.swift`): `VNGenerateForegroundInstanceMaskRequest` (macOS 14) gives a
+  soft mask of every foreground instance at the image's size. It's turned into an 8-bit gray image and applied with
+  `CGContext.clip(to:mask:)` rather than taking Vision's ready-made masked buffer, so the original color space
+  survives. The same pass finds the subject's bounding box (mask > 12/255) for "crop to subject". No observation,
+  no instances or an empty mask all become "No subject found"; other Vision errors are wrapped in a plain message.
+  - Staging: `BatchRunner` runs every unit inside `Output.atomically`, which sets a task-local `Output.Scope`.
+    While one is set, `file(beside:)`, `file(in:base:ext:)`, `file(in:sameNameAs:)` and `folder(beside:)` reserve
+    the final name but return a hidden temporary in the same folder (same volume, so the rename is atomic):
+    `.clementine-<pid>-<8 hex>-<final name>`, real extension last so ffmpeg and ImageIO still infer the format.
+    Engines write there unchanged. When the unit succeeds, every staged item that exists is renamed with
+    `renamex_np(RENAME_EXCL)` (never replaces; on `EEXIST` it takes the next free name), and URLs in the result,
+    including ones inside a staged folder, are rewritten to the final paths, so history, undo, the CLI's output
+    and Reveal in Finder only ever see real names. On failure or cancellation the temporaries are deleted and
+    error messages have the hidden names replaced with the real ones. Staged items an engine deleted itself are
+    skipped. `unique(in:)` stays a plain name, for items inside an output folder or a scratch folder.
+    Without a scope (code outside a job) the old behaviour applies: the final name directly.
+  - Crash recovery: before handing out a temporary, `OutputJournal` appends its folder (NUL-separated, under
+    `flock`) to `in-progress` in the support folder. At launch (CLI synchronously, the app on a utility queue)
+    `Output.sweepStale()` visits only those folders and deletes items named exactly like a temporary whose pid has
+    exited, or whose newest modification is over an hour old (a reused pid); everything else stays. Folders with
+    nothing left are dropped from the journal. `discardInFlight` also deletes every staged item.
+- **Images → PDF** (`ImageEngine.writePDF`, `Engines/ImagePDFWriter.swift`): pages are written one at a time by a
+  small PDF writer (JPEG image XObjects, an optional Flate alpha `SMask`, ICC profiles, xref at the end), each page
+  inside an `autoreleasepool`. Upright RGB/gray JPEGs that aren't oversized are embedded byte for byte; anything
+  else is decoded with ImageIO at no more than 400 dpi for its page and re-encoded as JPEG 0.9 (alpha
+  un-premultiplied into a mask with vImage). Page size comes from the image's dpi (when it declares more than 72),
+  scaled down to fit 842 pt. **PDF → images** renders and encodes each page inside its own `autoreleasepool`.
 - Other engines: `ImageEdits` renders the editors' JSON at full resolution, in pixel coordinates of the upright
   image with a top-left origin. `MetadataEngine.write` takes a JSON object of field changes and saves an
   `(edited)` copy without re-encoding. `PDFEngine.parseSpec/spec(for:qualified:)` handles page specs such as
@@ -394,6 +440,7 @@ static array until `willClose`.
   Contents/Resources/AppIcon.icns, THIRD_PARTY_NOTICES.md
   Contents/Resources/bin/                (everything in vendor/bin: ffmpeg, ffprobe, cwebp, img2webp)
   Contents/Frameworks/Sparkle.framework  (ditto'd from the SwiftPM bin dir; rpath @executable_path/../Frameworks)
+  Contents/Resources/Metadata.appintents (App Intents metadata for Shortcuts, see below)
   ```
   `UNIVERSAL=1` builds arm64 + x86_64, and `NO_SIGN=1` skips the ad-hoc `codesign --deep`.
   `scripts/fetch-tools.sh` (`make tools`) puts pinned, verified tool builds into `vendor/bin`.
@@ -414,6 +461,38 @@ static array until `willClose`.
 
   Otherwise "Check for Updates…" shows an alert explaining why. `Updater` is created lazily from
   `AppDelegate`, and CLI commands exit before the app starts, so the CLI never touches Sparkle.
+- **Shortcuts (App Intents):** Xcode runs `appintentsmetadataprocessor` after compiling to write
+  `Metadata.appintents` (`extract.actionsdata`), which is how Shortcuts learns an app's intents without running it.
+  SwiftPM doesn't, so `bundle.sh` does it by hand:
+  1. It builds with `-emit-const-values` and `-const-gather-protocols-file` (Xcode's protocol list, written to
+     `.build/appintents-protocols.json`), so the compiler records the intents' compile-time values: one
+     `Clementine.swiftconstvalues` for release (whole-module) builds, one `<File>.swift.swiftconstvalues` per source
+     in debug builds (leftovers from deleted sources are skipped).
+  2. It runs `xcrun appintentsmetadataprocessor` with the source list, those files and the app binary, writing into
+     `Contents/Resources` before signing.
+  3. It fails the bundle if `extract.actionsdata` doesn't list `ConvertWithClementineIntent`.
+
+  This needs a full Xcode (CI has one). The extra flags make `bundle.sh`'s build differ from a plain
+  `swift build`, so the Clementine module recompiles when you alternate between them. The intents set
+  `openAppWhenRun = false`: the system launches Clementine in the background if needed and `perform()` runs
+  in-process, through `ShortcutRunner` and `BatchRunner` like the CLI. Inputs without a file URL are written to a
+  temporary folder first, text results come back as `.txt` files, and errors are rethrown as `ShortcutError` so
+  Shortcuts shows the plain message. `ClementineActionQuery` reads the intent's files through
+  `@IntentParameterDependency` to suggest only actions that fit them; the list covers all three wheels and the
+  user's presets (by their own names, grouped as "Preset"). File-action values come back as `.txt` results and
+  `.done` actions (Terminal, Reveal, AirDrop) return nothing. Note that the app's own `Parameter` type
+  shadows App Intents' `Parameter` alias, so intents use `@IntentParameter`.
+- **Gentle update reminders** (`UpdateReminder` in `App/Updater.swift`, the controller's user-driver delegate):
+  as a menu bar (`LSUIElement`) app, a scheduled check's alert would otherwise open behind the front app.
+  `standardUserDriverShouldHandleShowingScheduledUpdate` lets Sparkle show it only when it proposes immediate
+  focus (soon after launch, or after the Mac was idle). Otherwise `standardUserDriverWillHandleShowingUpdate`
+  publishes `availableVersion`, which puts a dot on the menu bar icon (`MenuBarIcon`, a template image so the
+  menu bar tints it) and an "Update Available: Clementine x — Install…" item at the top of the menu, and posts a
+  notification with provisional authorization (quietly to Notification Center, no permission prompt). The menu
+  item and a click on the notification call `Updater.showPendingUpdate()` (activate + `checkForUpdates`, which
+  brings the held session's alert to the front). `standardUserDriverDidReceiveUserAttention` withdraws the
+  notification and `standardUserDriverWillFinishUpdateSession` clears the cue. When Sparkle shows an alert itself,
+  the app activates so it isn't behind Finder. `--render-ui` draws both icons (`menubar-icon-*.png`).
 - **Services:** `Info.plist › NSServices` declares "Convert with Clementine" (`convertFiles`),
   "Clementine Tools" (`toolFiles`) and "Clementine File Actions" (`fileActions`) for `public.item` files. `ServiceProvider.register()` sets
   `NSApp.servicesProvider` and calls `NSUpdateDynamicServices()`. Both handlers read file URLs from the
@@ -457,7 +536,13 @@ static array until `willClose`.
    it. Sleeping or spinning the run loop alone delivers nothing.
    `Frame.center` is nudged 0.3 pt off the exact midline, and the midline suite tests the exact center
    separately.
-9. **Smaller ones worth knowing:**
+9. **CGPDFContext and PDFKit hold every image until the document closes.** Drawing one image per page into a
+   `CGPDFContext` inside an autorelease pool still grew by about the output's size (5 MB per 12 MP JPEG,
+   25 MB per page for decoded pixels); merging single-page temp PDFs with PDFKit or `drawPDFPage` was no better.
+   Make PDF therefore writes the file itself (`ImagePDFWriter`): peak memory for 100 × 12 MP JPEGs went from
+   ~7 GB (extrapolated) to 8 MB. PDFKit's page thumbnails are autoreleased: without a pool per page, PDF → JPG of
+   200 pages peaked at 2.5 GB (56 MB with one).
+10. **Smaller ones worth knowing:**
    - `WheelController` delays the hide on `.ended` by 0.3 s because the drop arrives after mouse-up. The
      generation check stops a stale hide from closing a newer wheel.
    - `openFiles()` shows the wheel on the next runloop pass so the closing `NSOpenPanel` doesn't take key
@@ -474,5 +559,7 @@ static array until `willClose`.
 - `make ui-test` runs `.build/debug/Clementine --ui-test [filter…]`, which needs a logged-in GUI session. Tag
   controls with `.uiTestID("…")` (debug-only frame registry in `Support/UITestID.swift`) and add suites to
   `UITest.all`.
+- `--shortcut-run <action-id> [--set key=value]… file…` (debug) runs `ShortcutRunner`, the code behind the
+  Shortcuts actions, and prints what the intent would return.
 - `--render-wheel out.png [--tools | --files] [--hover N] [--light] [--click [--chip]] file…`, `--render-ui <dir>`
   (debug) and `--demo-wheel` (live wheel, app mode) are visual dev aids.

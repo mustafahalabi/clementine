@@ -84,7 +84,7 @@ struct WheelSettingsView: View {
     /// What the wheel will show: visible slices, ordered by usage, capped like the real thing.
     private var shown: [Action] {
         let visible = actions.filter { !prefs.hidden.contains($0.id) }
-        return Array(ActionUsage.arrange(visible, bucket: ActionUsage.bucket(kind: group.kind, mode: mode)).prefix(12))
+        return Array(ActionUsage.arrange(visible, bucket: ActionUsage.bucket(kind: group.kind, mode: mode)).prefix(ActionRegistry.maxSlices))
     }
 
     var body: some View {

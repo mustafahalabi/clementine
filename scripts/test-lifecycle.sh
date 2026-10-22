@@ -53,6 +53,12 @@ gone_within() {
   return 1
 }
 
+# Hidden temporaries an output is staged under until it's complete: `.clementine-<pid>-<8 hex>-<final name>`.
+temps() { ls -A "$F" | grep -E "^\.clementine-[0-9]+-[0-9a-f]{8}-$1\$"; }
+visible() { ls "$F" | sort; }
+JOURNAL="$CLEMENTINE_SUPPORT_DIR/in-progress"
+journaled() { [[ -f "$JOURNAL" ]] && tr '\0' '\n' < "$JOURNAL" | grep -qxF "$1"; }
+
 # interrupt <name> <signal> <expected exit>: starts a long encode, signals the CLI mid-run, then checks that the
 # tool is gone, nothing new is in the folder and the exit status is 128 + signal.
 interrupt() {
@@ -62,7 +68,7 @@ interrupt() {
   cli=$!
   if ! tool="$(child_of $cli ffmpeg)"; then bad "$name" "ffmpeg never started"; kill -9 $cli; return; fi
   sleep 1
-  check "$name: output is being written before the signal" '[[ -e "$F/long.webm" ]]'
+  check "$name: output is being written (under a hidden name) before the signal" '[[ -n "$(temps long.webm)" && ! -e "$F/long.webm" ]]'
   if [[ "$sig" == TERM ]]; then
     # Captured first: `pmset | grep -q` fails at random under pipefail when grep exits early.
     local assertions; assertions="$(pmset -g assertions)"
@@ -81,6 +87,63 @@ echo "Interrupting a run"
 interrupt "SIGTERM" TERM 143
 interrupt "SIGINT" INT 130
 interrupt "SIGHUP" HUP 129
+
+echo "Crash mid-encode (SIGKILL): nothing under a real name, the next launch removes the temporary"
+before="$(visible)"
+"$BIN" --run convert.media.webm "$F/long.mp4" >/dev/null 2>&1 &
+cli=$!
+if tool="$(child_of $cli ffmpeg)"; then
+  sleep 1
+  check "SIGKILL: encode writes to a hidden temporary with the real extension" '[[ -n "$(temps long.webm)" && ! -e "$F/long.webm" ]]' "$(ls -A "$F" | tr '\n' ' ')"
+  check "SIGKILL: the folder is in the in-progress journal" 'journaled "$F"'
+  kill -KILL $cli; wait $cli 2>/dev/null
+  # Tools run in their own process group, so they outlive a SIGKILLed parent; stop this one ourselves.
+  kill -KILL $tool 2>/dev/null; gone_within $tool 2
+  check "SIGKILL: no visible partial output" '[[ "$(visible)" == "$before" ]]' "new: $(comm -13 <(echo "$before") <(visible) | tr '\n' ' ')"
+  check "SIGKILL: the temporary is still there until the next launch" '[[ -n "$(temps long.webm)" ]]'
+  "$BIN" --list "$F/photo.png" >/dev/null 2>&1
+  check "next launch removes the dead run's temporary" '[[ -z "$(temps long.webm)" && "$(visible)" == "$before" ]]' "$(ls -A "$F" | tr '\n' ' ')"
+  check "next launch drops the cleaned folder from the journal" '! journaled "$F"'
+else
+  bad "SIGKILL" "ffmpeg never started"; kill -9 $cli
+fi
+
+echo "Sweeping only what's clearly a dead run's temporary"
+ELSEWHERE="$WORK/elsewhere"; mkdir -p "$ELSEWHERE"
+# 99999+ is above macOS's pid range, so that owner is certainly gone.
+touch "$F/.clementine-$$-0123abcd-live.mp4" "$F/.clementine-999999-0123abcd-dead.mp4" "$F/.clementine-notes" \
+      "$F/.clementine-999999-xyz-odd.mp4" "$ELSEWHERE/.clementine-999999-0123abcd-dead.mp4"
+touch "$F/.clementine-$$-4567cdef-idle.mp4"; touch -A -020000 "$F/.clementine-$$-4567cdef-idle.mp4"
+printf '%s\0' "$F" >> "$JOURNAL"
+"$BIN" --list "$F/photo.png" >/dev/null 2>&1
+check "temporary of a dead process is removed" '[[ ! -e "$F/.clementine-999999-0123abcd-dead.mp4" ]]'
+check "temporary of a running process is kept" '[[ -e "$F/.clementine-$$-0123abcd-live.mp4" ]]'
+check "temporary untouched for over an hour is removed even if its pid is in use" '[[ ! -e "$F/.clementine-$$-4567cdef-idle.mp4" ]]'
+check "files that only look similar are left alone" '[[ -e "$F/.clementine-notes" && -e "$F/.clementine-999999-xyz-odd.mp4" ]]'
+check "folders not in the journal are never touched" '[[ -e "$ELSEWHERE/.clementine-999999-0123abcd-dead.mp4" ]]'
+check "a folder with a live temporary stays in the journal" 'journaled "$F"'
+rm -f "$F"/.clementine-*
+
+echo "Final name taken while the output was being written"
+use_fake_tools
+# Writes the output (the last argument) and takes a moment, so the real name can be taken meanwhile.
+fake_ffmpeg 'for out; do :; done; echo encoded > "$out"; sleep 1.5'
+"$BIN" --run convert.media.mp3 "$F/tone.wav" >"$WORK/out.txt" 2>"$WORK/err.txt" &
+cli=$!
+for i in $(seq 50); do [[ -n "$(temps tone.mp3)" ]] && break; sleep 0.1; done
+echo placeholder > "$F/tone.mp3"
+wait $cli; status=$?
+out="$(cat "$WORK/out.txt")"
+check "race: finishes and picks the next free name" '[[ $status -eq 0 && "$out" == "$F/tone 2.mp3" && "$(cat "$F/tone 2.mp3")" == encoded ]]' "exit $status: $out $(cat "$WORK/err.txt")"
+check "race: the file that took the name is untouched" '[[ "$(cat "$F/tone.mp3")" == placeholder ]]'
+check "race: no temporary left" '[[ -z "$(ls -A "$F" | grep "^\.clementine-")" ]]'
+rm -f "$F/tone.mp3" "$F/tone 2.mp3"
+
+fake_ffmpeg 'for out; do :; done; echo partial > "$out"; echo "$out: Invalid data found when processing input" >&2; exit 1'
+out="$("$BIN" --run convert.media.mp3 "$F/tone.wav" 2>&1)"; status=$?
+check "failed write: temporary deleted, nothing under the real name" '[[ $status -eq 1 && ! -e "$F/tone.mp3" && -z "$(ls -A "$F" | grep "^\.clementine-")" ]]' "exit $status: $out"
+check "failed write: the message names the real file, never the hidden one" '[[ "$out" == *"tone.mp3: Invalid data"* && "$out" != *".clementine-"* ]]' "$out"
+use_real_tools
 
 echo "Tools that ignore SIGTERM"
 use_fake_tools

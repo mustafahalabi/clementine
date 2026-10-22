@@ -13,7 +13,8 @@ q() { ffmpeg -loglevel error -y "$@"; }
 probe() { ffprobe -v error -of csv=p=0 "$@"; }
 
 echo "Fixtures in $F"
-q -f lavfi -i testsrc=size=360x640:rate=30 -f lavfi -i sine=r=44100 -t 3 -c:v libx264 -pix_fmt yuv420p -c:a aac "$F/portrait clip.mp4"
+# Grainy, so Compress has something to shrink (it keeps the original when it can't).
+q -f lavfi -i "testsrc=size=360x640:rate=30,noise=alls=25:allf=t" -f lavfi -i sine=r=44100 -t 3 -c:v libx264 -pix_fmt yuv420p -c:a aac "$F/portrait clip.mp4"
 q -f lavfi -i testsrc=size=641x361:rate=24 -t 2 -c:v libx264 -pix_fmt yuv444p "$F/odd.mkv"
 q -f lavfi -i testsrc=size=640x360:rate=30 -t 2 -c:v libx264 -pix_fmt yuv420p "$F/rot.mp4"
 q -display_rotation 90 -i "$F/rot.mp4" -c copy "$F/rotated.mp4"
@@ -210,7 +211,7 @@ expect "mp3 with art speed" 'near "$(dur "$OUT")" 2.0' -- tool.media.speed "$F/s
 expect "mp3 with art normalize" '[[ -f "$OUT" ]]' -- tool.audio.normalize "$F/song with art.mp3"
 expect "mp3 with art split" '[[ $(ls "$OUT" | wc -l) -ge 2 ]]' -- tool.media.split --set seconds=2 "$F/song with art.mp3"
 expect "mp3 with art fit" '[[ $(stat -f%z "$OUT") -le 30000 ]]' -- tool.fit --set megabytes=0.03 "$F/song with art.mp3"
-expect "mp3 with art compress" '[[ -f "$OUT" ]]' -- tool.compress "$F/song with art.mp3"
+expect "mp3 with art compress" '[[ -f "$OUT" ]]' -- tool.compress --set level=2 "$F/song with art.mp3"
 expect "mp3 strip metadata removes tags" '! ffprobe -v error -show_entries format_tags -of csv=p=0 "$OUT" | grep -q Someone' -- tool.metadata.strip "$F/song with art.mp3"
 expect "metadata shows artist" '[[ "$("$BIN" --run tool.metadata "$F/song with art.mp3")" == *Someone* ]]' -- tool.metadata "$F/song with art.mp3"
 expect "mono bleep" '[[ -f "$OUT" ]]' -- tool.audio.bleep --set ranges=1-2 "$F/mono 22k.wav"

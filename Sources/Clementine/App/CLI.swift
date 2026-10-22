@@ -57,7 +57,7 @@ enum CLI {
 
     private static let usage = """
         usage: Clementine --list <file>...
-               Clementine --run <action-id> [--set key=value]... [--record] <file>...
+               Clementine --run <action-id> [--set key=value]... [--record] [--software] <file>...
                Clementine --preset <name> [--record] <file>...
                Clementine --list-presets
                Clementine --save-preset <name> --action <action-id> [--set key=value]...
@@ -66,6 +66,7 @@ enum CLI {
 
         --list shows each wheel as it would appear (most used first, hidden slices marked).
         --run processes several files in parallel, like the app. --record also logs usage and history.
+        --software encodes video with x264/x265 even when hardware encoding is on.
         --undo moves the newest history entry's outputs to the Trash.
         File actions (⌃ wheel) print their result: --run file.sha256 movie.mov prints the hash.
         """
@@ -102,6 +103,8 @@ enum CLI {
                 let argument = arguments.removeFirst()
                 if argument == "--record" {
                     record = true
+                } else if argument == "--software" {
+                    FFmpeg.Hardware.forceSoftware.withLock { $0 = true }
                 } else if argument == "--set" {
                     guard !arguments.isEmpty else { return usageError("--set needs key=value") }
                     let pair = arguments.removeFirst().split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
@@ -133,6 +136,10 @@ enum CLI {
                 case .success(.files(let outputs)): outputs.forEach { print($0.path) }
                 case .success(.text(let title, let body)): print("== \(title) ==\n\(body)")
                 case .success(.value(let value)), .success(.done(let value)): print(value)
+                case .success(.unchanged(let message)):
+                    // stderr, so stdout stays a list of output paths; not an error (exit status stays 0).
+                    fflush(stdout)
+                    fputs("kept: \(unit[0].lastPathComponent): \(message)\n", stderr)
                 case .failure(is CancellationError) where report.cancelled:
                     fflush(stdout)
                     fputs("cancelled: \(unit[0].lastPathComponent)\n", stderr)

@@ -108,6 +108,12 @@ check "a hidden preset leaves the wheel" '! section Tools "$F/photo.png" | grep 
 check "delete removes it" '! "$BIN" --list-presets | grep -q "$ID"'
 check "…and forgets that it was hidden" '[[ -z "$(defaults read "$CLEMENTINE_DEFAULTS_SUITE" hiddenActions 2>/dev/null | grep preset)" ]]'
 
+echo "Shortcuts (the ShortcutRunner path)"
+check "a file action returns its value as text" '[[ "$("$BIN" --shortcut-run file.sha256 "$F/photo.png" 2>/dev/null)" == "== SHA-256 ==$NL$(sha "$F/photo.png")" ]]'
+check "Open in Terminal returns nothing" '[[ -z "$("$BIN" --shortcut-run file.terminal "$F/photo.png" 2>/dev/null)" ]]'
+TEN="$("$BIN" --list-presets | awk -F"\t" '$2=="Ten"{print $1}')"
+check "a preset runs through Shortcuts" '[[ -n "$TEN" && -f "$("$BIN" --shortcut-run "$TEN" "$F/photo.png" 2>/dev/null)" ]]'
+
 echo "Checked on load"
 cat > "$CLEMENTINE_SUPPORT_DIR/presets.json" <<'JSON'
 { "version": 1, "presets": [

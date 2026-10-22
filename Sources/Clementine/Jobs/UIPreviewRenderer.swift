@@ -62,6 +62,10 @@ enum UIPreview {
             let form = ParameterForm(action: edit, urls: urls, values: values, onApply: { _ in }, onCancel: {})
             snapshotWindow(NSHostingController(rootView: form), appearance: appearance, settle: 1.5, to: out("parameters-preview"))
         }
+        if let cutOut = ActionRegistry.find("tool.image.removebg"), let image {
+            let form = ParameterForm(action: cutOut, urls: [image], values: cutOut.defaults, onApply: { _ in }, onCancel: {})
+            snapshotWindow(NSHostingController(rootView: form), appearance: appearance, settle: 2, to: out("parameters-cutout"))
+        }
         if let fit = ActionRegistry.find("tool.fit") {
             let form = ParameterForm(action: fit, urls: [URL(fileURLWithPath: "/tmp/clip.mov")], values: fit.defaults,
                                      onApply: { _ in }, onCancel: {})
@@ -84,6 +88,17 @@ enum UIPreview {
                        appearance: appearance, to: out("result-metadata"))
 
         snapshotWindow(NSHostingController(rootView: SettingsView()), appearance: appearance, to: out("settings"))
+
+        // Menu bar icon, plain and with the update-available dot, tinted the way the menu bar tints templates.
+        let icons = HStack(spacing: 18) {
+            ForEach([false, true], id: \.self) { badged in
+                Image(nsImage: MenuBarIcon.image(badged: badged)).renderingMode(.template).scaleEffect(2)
+                    .frame(width: 44, height: 44)
+            }
+        }
+        .padding(12)
+        .background(Color(nsColor: .windowBackgroundColor))
+        snapshot(NSHostingView(rootView: icons), appearance: appearance, to: out("menubar-icon"))
 
         // Welcome tour, one PNG per page (demo frozen on a hovered slice).
         for page in 0..<OnboardingView.pageCount {
@@ -111,8 +126,11 @@ enum UIPreview {
         let partial = RunningJob(title: "Convert to WebP", symbol: "arrow.triangle.2.circlepath", detail: "9 of 10 done")
         partial.state = .failed("broken.png: Couldn't read broken.png.")
         partial.undo = {}
+        let kept = RunningJob(title: "Compress", symbol: "arrow.down.right.and.arrow.up.left", detail: JobOutput.keptOriginal)
+        kept.progress = 1
+        kept.state = .done
         let cards = VStack(spacing: 14) {
-            ForEach([offer, undone, partial], id: \.detail) { job in
+            ForEach([offer, undone, partial, kept], id: \.detail) { job in
                 JobView(job: job, cancel: {}, dismiss: {}).shadow(color: .black.opacity(0.18), radius: 14, y: 6)
             }
         }

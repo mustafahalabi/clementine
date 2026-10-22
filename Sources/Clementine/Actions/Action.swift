@@ -118,6 +118,18 @@ enum JobOutput {
     case value(String)
     /// Something that happened outside Clementine (Terminal opened, AirDrop sent). The message is for the card / CLI.
     case done(String)
+    /// Nothing written on purpose; the note says why (shown on the job card, printed by the CLI).
+    case unchanged(String)
+
+    static let keptOriginal = "Already as small as it gets — kept the original."
+
+    /// Compress must never hand back a bigger file: if `output` isn't smaller than `input`, it's deleted.
+    static func smaller(_ output: URL, than input: URL) -> JobOutput {
+        func size(_ url: URL) -> Int? { (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize }
+        guard let new = size(output), let old = size(input), new >= old else { return .files([output]) }
+        try? FileManager.default.removeItem(at: output)
+        return .unchanged(keptOriginal)
+    }
 }
 
 typealias Editor = @MainActor (_ urls: [URL], _ defaults: ParamValues, _ apply: @escaping (ParamValues) -> Void) -> Void
@@ -161,6 +173,9 @@ func kinds(_ kinds: FileKind...) -> (FileItem) -> Bool {
 }
 
 enum ActionRegistry {
+    /// Slices per wheel. 13 is the most that keeps two-line labels readable (one image matches exactly 13 tools).
+    static let maxSlices = 13
+
     static let all: [Action] = ConvertActions.all + ToolActions.all + ConvertActions.archiveCreate + FileActions.all
 
     static func find(_ id: String) -> Action? {
@@ -179,12 +194,12 @@ enum ActionRegistry {
         return base.flatMap { action in [action] + presets.filter { $0.basedOn == action.id }.map(\.action) }
     }
 
-    /// The slices to show for these files: visible candidates, most used first, at most 12 so labels stay readable.
+    /// The slices to show for these files: visible candidates, most used first, at most `maxSlices`.
     static func actions(for urls: [URL], mode: WheelMode) -> [Action] {
         let hidden = HiddenActions.ids
         let visible = candidates(for: urls, mode: mode).filter { !hidden.contains($0.id) }
         let arranged = ActionUsage.arrange(visible, bucket: ActionUsage.bucket(for: urls.map(FileItem.init), mode: mode))
-        return Array(arranged.prefix(12))
+        return Array(arranged.prefix(maxSlices))
     }
 
     /// Every action that applies to these files, in catalog order, hidden ones included.

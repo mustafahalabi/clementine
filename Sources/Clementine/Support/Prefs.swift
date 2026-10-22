@@ -7,6 +7,7 @@ enum Prefs {
     static let qualityKey = "imageQuality"
     static let toolsDirectoryKey = "toolsDirectory"
     static let controlWheelKey = "controlWheel"
+    static let hardwareEncodingKey = "hardwareEncoding"
 
     /// The bundled app reads `app.clementine.Clementine`; the unbundled debug binary falls back to a domain named
     /// after the executable (`~/Library/Preferences/Clementine.plist`). Debug builds can point at a scratch suite
@@ -35,4 +36,6 @@ enum Prefs {
     static var toolsDirectory: String? { defaults.string(forKey: toolsDirectoryKey) }
     /// Whether ⌃ while dragging opens the file actions wheel (Settings › General).
     static var controlWheel: Bool { defaults.object(forKey: controlWheelKey) as? Bool ?? true }
+    /// H.264/HEVC through VideoToolbox (see `FFmpeg.Hardware`).
+    static var hardwareEncoding: Bool { defaults.object(forKey: hardwareEncodingKey) as? Bool ?? true }
 }

@@ -93,8 +93,8 @@ final class JobRunner {
                 NSPasteboard.general.setString(value, forType: .string)
                 job.result = value
                 job.detail = "Copied to the clipboard"
-            } else if !report.notes.isEmpty {
-                job.detail = report.notes.joined(separator: " · ")
+            } else if !report.messages.isEmpty {
+                job.detail = report.messages.joined(separator: " · ")
             }
             if !report.files.isEmpty {
                 let entry = HistoryStore.shared.record(action, inputs: urls, outputs: report.files)
@@ -114,15 +114,27 @@ final class JobRunner {
                     }
                 }
             }
+            let note = Self.note(for: report, units: count)
+            if let note { job.detail = note }
             if report.failures.isEmpty {
                 job.progress = 1
                 job.state = .done
-                // Long enough to reach Undo or read a copied value; hovering the card keeps it open.
-                panel.close(after: job.undo != nil || job.result != nil ? 5 : report.notes.isEmpty ? 1.2 : 2.5)
+                // Long enough to reach Undo, read a copied value, or see why nothing was written; hovering keeps it open.
+                panel.close(after: job.undo != nil || job.result != nil ? 5 : note != nil ? 4 : report.messages.isEmpty ? 1.2 : 2.5)
             } else {
                 job.state = .failed(report.failures.map(\.message).joined(separator: "\n"))
             }
         }
+    }
+
+    /// What the card says when some units deliberately wrote nothing (Compress keeping a smaller original).
+    static func note(for report: BatchReport, units: Int) -> String? {
+        guard let first = report.notes.first else { return nil }
+        if units == 1 { return first.message }
+        let kept = report.notes.count
+        if kept == units { return "All \(kept) were already as small as they get — originals kept." }
+        return kept == 1 ? "1 was already as small as it gets — original kept."
+                         : "\(kept) were already as small as they get — originals kept."
     }
 
     /// Cancels every running job and waits (bounded) for its tools to stop and partial outputs to be deleted.

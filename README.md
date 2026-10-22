@@ -129,8 +129,11 @@ The wheel only shows what makes sense for the file you're holding, and the slice
 
 **Compress**, hit a **Target Size**, **Resize**, **Crop**, **Rotate/Flip**, and **Edit** exposure, brightness,
 contrast, saturation, highlights and shadows with a live preview. **Redact** faces and text, **Annotate** with arrows,
-shapes and text, **Add BG** (a gradient backdrop with padding, rounded corners and a shadow), **Read QR** codes, and view, edit or remove **Metadata**
-(including location). Drop two or more images to make a **Collage** or a **PDF**.
+shapes and text, **Cut Out Subject** (removes the background and leaves the person, pet or object on transparency,
+on-device with Apple's Vision), **Add BG** (a gradient backdrop with padding, rounded corners and a shadow), **Read QR** codes, and view, edit or remove **Metadata**
+(including location). Drop two or more images to make a **Collage** or a **PDF** (pages sized for paper, at most A4's
+long edge; hundreds of photos work, since pages are written one at a time). Compress never hands back a bigger file:
+if a file is already as small as it gets, the original is kept and the card says so.
 
 ### Video
 
@@ -140,8 +143,13 @@ shapes and text, **Add BG** (a gradient backdrop with padding, rounded corners a
 </picture>
 
 **Trim** on a filmstrip and waveform, **Compress** or hit a **Target Size** (two-pass), change **Speed**, **Split**,
-take a **Snapshot**, **Mute**, **Rotate**, **Bleep** words out, and edit or remove **Metadata**. Drop two or more
-clips to **Join** them.
+take a **Snapshot**, **Mute**, **Rotate**, make a **GIF** (frame rate, width, and an optional "under N MB"),
+**Bleep** words out, and edit or remove **Metadata**. Drop two or more clips to **Join** them; portrait phone clips
+stay portrait.
+
+iPhone HDR video converts to SDR with correct colours instead of looking washed out, and edits keep it HDR (10-bit
+HEVC). H.264 and HEVC encode on the Mac's media engine (VideoToolbox), several times faster than software; turn
+**Use hardware encoding for video** off in Settings for the smallest files.
 
 ### Audio
 
@@ -268,8 +276,8 @@ two-week half-life). Settings › Wheel hides slices you never use, with a live 
 <td width="50%" valign="top">
 
 **Batches.** Drop many files at once. Clementine runs the action on each of them, several in parallel (up to half
-your cores for images and documents, two at a time for audio and video), or once on all of them for Join, Merge,
-Collage and Make PDF. Each job gets a small progress card with cancel, and finished files are revealed in Finder.
+your cores for images and documents, two at a time for audio and video, fewer for very large images so memory
+stays in check), or once on all of them for Join, Merge, Collage and Make PDF. Each job gets a small progress card with cancel, and finished files are revealed in Finder.
 
 **Switch mid-drag.** Press or release <kbd>⌥</kbd> while the wheel is open to flip between the convert and tools
 wheels.
@@ -287,12 +295,31 @@ Settings › Wheel. They live in `presets.json` in Clementine's Application Supp
 **A command line, too.** Every action on the wheel also runs from Terminal with the same engine, so you can script
 it. See [For developers](#for-developers).
 
+**Shortcuts.** Clementine's actions are in the Shortcuts app too. See [Shortcuts](#shortcuts).
+
 **Settings.** Turn the wheel off while dragging, choose whether finished files are revealed in Finder, launch at
 login, set JPEG/HEIC quality, and point Clementine at an extra folder of command-line tools.
 
 </td>
 </tr>
 </table>
+
+## Shortcuts
+
+Clementine adds three actions to the Shortcuts app (search for "Clementine" in the action list):
+
+| Action | What it does |
+| --- | --- |
+| **Convert with Clementine** | Runs any conversion or tool on the files you pass it. Pick the action from a list; once the shortcut has files, the list shows only what fits them, like the wheel. **Settings** (optional) takes `key=value` lines, the same as the command line's `--set` (for example `level=Smallest` for Compress). |
+| **Remove Background with Clementine** | Cuts the subject out of images onto transparency. Choose PNG, HEIC or WebP, and whether to crop to the subject. |
+| **Convert Images with Clementine** | Converts images to JPG, PNG, HEIC, WebP, AVIF, TIFF, GIF or PDF. Images already in that format pass through. |
+
+Each returns the new files, so the next step of the shortcut can use them. As with the wheel, results are saved next
+to the originals. Files without a place on disk (an image from the clipboard, say) are worked on in a temporary
+folder, so save the results somewhere if you want to keep them. Clementine doesn't need to be running: Shortcuts
+starts it in the background and the action runs without opening a window. Shortcuts runs don't appear in History.
+
+The action ids and settings for **Convert with Clementine** are the ones in [docs/CLI.md](docs/CLI.md).
 
 ## Install
 
@@ -312,7 +339,8 @@ login, set JPEG/HEIC quality, and point Clementine at an extra folder of command
 - **No setup, no extra downloads.** ffmpeg and the WebP tools are built in.
 - **No special permissions.** Clementine notices drags by watching for mouse-downs and the system drag pasteboard,
   which doesn't need Accessibility access.
-- **Updates** come through Sparkle: menu bar › **Check for Updates…**.
+- **Updates** come through Sparkle: menu bar › **Check for Updates…**. When an automatic check finds one, the
+  menu bar icon gets a dot and the menu an **Update Available: Clementine x — Install…** item (plus a quiet notification).
 - **Launch at login** is a switch on the last page of the welcome tour and in Settings.
 
 </details>
@@ -379,12 +407,18 @@ dragging" is on in Settings and that Clementine is running (look for it in the m
 - **Waveform editors** show a filmstrip and video preview only for formats AVFoundation reads (MP4, MOV, M4V); MKV,
   WebM and the like get the waveform and sound-only playback. Bleep and Channels previews are rendered with ffmpeg
   first, so long files take a moment.
+- **HDR** is kept only by Trim, Speed, Rotate and Join (all-HDR clips) into MP4/MOV; everything else, including
+  Convert to MP4/MOV, makes SDR. HDR10+/Dolby Vision dynamic metadata isn't carried over.
+- **Hardware encoding** makes files about 15-30% larger than software at the same quality; Compress and Target
+  Size always use software.
 - **Split** copies streams without re-encoding, so cuts land on keyframes and part lengths are approximate.
 - **DOCX → PDF** keeps text styling but not embedded images.
 - **RAR** can be extracted but not created.
+- **Cut Out Subject** uses the same model as Photos' "Copy Subject": it finds people, pets and distinct objects, not
+  arbitrary regions, and keeps every subject it finds. Without a clear subject it says so instead of guessing.
 - **Open Files…** shows the standard open panel while another app is still active; click into it before typing.
 - **Open in Terminal** always uses Terminal.app; macOS has no common way to ask for another terminal.
-- **Presets** count toward the wheel's 12 slices; hide slices you don't use in Settings › Wheel to make room.
+- **Presets** count toward the wheel's 13 slices; hide slices you don't use in Settings › Wheel to make room.
 
 ## Contributing
 
@@ -416,7 +450,7 @@ Requires macOS 14+ and Xcode 16+ (Swift 6 toolchain). Swift Package Manager fetc
 make tools                   # optional: verified static ffmpeg/ffprobe + cwebp/img2webp into vendor/bin, bundled into the app
 make run                     # builds build/Clementine.app and launches it
 make install                 # copies it to /Applications
-make test                    # all nine headless suites (every action on generated files), summary at the end
+make test                    # all the headless suites (every action on generated files), summary at the end
 make ui-test                 # interaction tests: real windows off-screen, driven with synthetic clicks, drags and typing
 scripts/test-waveform.sh     # channel layouts, bleeps on video, editor times, offscreen editor renders
 scripts/test-pdf-metadata.sh # page lists, merge picks and metadata writers, read back after each run
@@ -426,7 +460,7 @@ scripts/test-image-editor.sh # crop / redact / annotate engines, from the JSON t
 An app built without `make tools` uses Homebrew's tools (`brew install ffmpeg webp`); the test suites use
 `vendor/bin` when `make tools` has run. External tools are looked up in the folder set in Settings first (so you can
 use your own ffmpeg build), then the app's `Contents/Resources/bin`, then `/opt/homebrew/bin`, `/usr/local/bin`,
-`/usr/bin` and `/bin`. CI (`.github/workflows/ci.yml`) runs all nine suites against the bundled ffmpeg plus a
+`/usr/bin` and `/bin`. CI (`.github/workflows/ci.yml`) runs all the suites against the bundled ffmpeg plus a
 release build on every push and pull request.
 
 ### Command line
@@ -451,7 +485,7 @@ $BIN --preset "Under 10 MB" clip.mov                     # run a preset by name
 
 ```
 Sources/Clementine/
-  App/          entry point, menu bar, settings, CLI, welcome tour, Sparkle updater
+  App/          entry point, menu bar, settings, CLI, Shortcuts actions (App Intents), welcome tour, Sparkle updater
   Drag/         DragMonitor (spots file drags + modifier keys), WheelController (glue)
   Wheel/        WheelPanel (floating drop target), WheelView (SwiftUI), WheelModel (geometry, hit-testing)
   Actions/      Action model + registry; ConvertActions, ToolActions and FileActions are the catalog; Presets
