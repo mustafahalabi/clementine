@@ -55,11 +55,11 @@ Process entry (`App/ClementineApp.swift`, `Entry.main`): debug-only `--render-ui
 
 | Folder | Key types |
 | --- | --- |
-| `App/` | `Entry`/`ClementineApp`/`AppDelegate` (entry, menu bar). `CLI` (headless commands). `ServiceProvider` (Finder Services). `Updater` (Sparkle wrapper). `HistoryMenu` (Open Files…, Recent, Undo). `SettingsWindow` (General + Wheel tabs), `WheelSettings` (`WheelCatalog`, `WheelPrefs`, live preview). `OnboardingWindow` (welcome tour, launch-at-login via `SMAppService`). |
+| `App/` | `Entry`/`ClementineApp`/`AppDelegate` (entry, menu bar). `CLI` (headless commands). `ServiceProvider` (Finder Services). `Updater` (Sparkle wrapper). `HistoryMenu` (Open Files…, Recent, Undo). `SettingsWindow` (General + Wheel tabs), `WheelSettings` (`WheelCatalog`, `WheelPrefs`, live preview). `OnboardingWindow` (welcome tour, launch-at-login via `SMAppService`). `Shortcuts.swift`: App Intents (`ConvertWithClementineIntent`, `RemoveBackgroundIntent`, `ConvertImagesIntent`, `ClementineActionEntity` + query) over `ShortcutRunner`. |
 | `Drag/` | `DragMonitor` (detects file drags + modifiers), `WheelController` (glue: monitor → panel → `JobRunner`; also `--demo-wheel`, `openFiles()`, `showClickable`). |
 | `Wheel/` | `WheelPanel` (+ private `WheelWindow`, `DropCatcher`), `WheelModel` (actions, geometry, hit-testing, thumbnail), `WheelView` (SwiftUI ring, `Slice` shape, `Hub`, `ModeChip`, `EmptyNotice`). |
 | `Actions/` | `Action`, `Parameter`, `ParamValue(s)`, `JobContext`, `JobOutput`, `Editor`, `WheelMode`, `ActionRegistry` (`Action.swift`). Catalogs: `ConvertActions`, `ToolActions`. `WheelOrdering.swift`: `HiddenActions`, `ActionUsage` (frecency). |
-| `Engines/` | `ImageEngine` (ImageIO load/encode, `ImageFormat`), `ImageTools` (⌥⇧ image tools, Core Image), `ImageEdits` (full-res crop/redact/annotate from JSON), `PDFEngine` (PDFKit, page specs), `DocumentEngine` (`@MainActor`, AppKit text system), `MediaEngine` + `FFmpeg` (probe, encode args, progress), `ArchiveEngine` (system zip/bsdtar/gzip/bzip2), `SubtitleEngine`, `MetadataEngine` (read/write common fields, `(edited)` copies), `ProcessRunner` + `ToolLocator`. |
+| `Engines/` | `ImageEngine` (ImageIO load/encode, `ImageFormat`), `ImageTools` (⌥⇧ image tools, Core Image), `ImageEdits` (full-res crop/redact/annotate from JSON), `BackgroundRemover` (Vision subject lifting for Cut Out Subject), `PDFEngine` (PDFKit, page specs), `DocumentEngine` (`@MainActor`, AppKit text system), `MediaEngine` + `FFmpeg` (probe, encode args, progress), `ArchiveEngine` (system zip/bsdtar/gzip/bzip2), `SubtitleEngine`, `MetadataEngine` (read/write common fields, `(edited)` copies), `ProcessRunner` + `ToolLocator`. |
 | `ImageEditor/` | `ImageEditorWindow` (panel + `EditorShell`), `EditorCanvas` (`EditorImage`, `CanvasMapping`, `RectHandle`, toolbar pieces), `CropEditor`, `RedactEditor`, `AnnotateEditor`. |
 | `Waveform/` | `Waveform` + `WaveformLoader` (peaks, in-memory cache), `Playback` (AVPlayer, `PreviewRenders` in a temp folder), `WaveformEditorModel` (`EditorModel.swift`), `WaveformViews` (shared views, `EditorWindow`), `TrimEditor`, `BleepEditor`, `ChannelsEditor`. |
 | `Jobs/` | `JobRunner`/`RunningJob`, `BatchRunner`/`BatchReport`, `HistoryStore`/`HistoryEntry` (`History.swift`), `ProgressPanel`/`JobView`, `ParameterWindow`/`ParameterForm`, `ResultWindow`, `PageOrganizer`, `MetadataEditor`, `UIPreviewRenderer` (debug `--render-ui`). |
@@ -261,6 +261,11 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
     pruned when the set grows past 256, and the set is cleared when the last batch ends.
   - `produce(url)` deletes a half-written output if the body throws, and `filling(folder)` does the same for
     output folders.
+- **BackgroundRemover** (`BackgroundRemover.swift`): `VNGenerateForegroundInstanceMaskRequest` (macOS 14) gives a
+  soft mask of every foreground instance at the image's size. It's turned into an 8-bit gray image and applied with
+  `CGContext.clip(to:mask:)` rather than taking Vision's ready-made masked buffer, so the original color space
+  survives. The same pass finds the subject's bounding box (mask > 12/255) for "crop to subject". No observation,
+  no instances or an empty mask all become "No subject found"; other Vision errors are wrapped in a plain message.
 - Other engines: `ImageEdits` renders the editors' JSON at full resolution, in pixel coordinates of the upright
   image with a top-left origin. `MetadataEngine.write` takes a JSON object of field changes and saves an
   `(edited)` copy without re-encoding. `PDFEngine.parseSpec/spec(for:qualified:)` handles page specs such as
@@ -371,6 +376,7 @@ static array until `willClose`.
   Contents/Resources/AppIcon.icns, THIRD_PARTY_NOTICES.md
   Contents/Resources/bin/                (everything in vendor/bin: ffmpeg, ffprobe, cwebp, img2webp)
   Contents/Frameworks/Sparkle.framework  (ditto'd from the SwiftPM bin dir; rpath @executable_path/../Frameworks)
+  Contents/Resources/Metadata.appintents (App Intents metadata for Shortcuts, see below)
   ```
   `UNIVERSAL=1` builds arm64 + x86_64, and `NO_SIGN=1` skips the ad-hoc `codesign --deep`.
   `scripts/fetch-tools.sh` (`make tools`) puts pinned, verified tool builds into `vendor/bin`.
@@ -391,6 +397,25 @@ static array until `willClose`.
 
   Otherwise "Check for Updates…" shows an alert explaining why. `Updater` is created lazily from
   `AppDelegate`, and CLI commands exit before the app starts, so the CLI never touches Sparkle.
+- **Shortcuts (App Intents):** Xcode runs `appintentsmetadataprocessor` after compiling to write
+  `Metadata.appintents` (`extract.actionsdata`), which is how Shortcuts learns an app's intents without running it.
+  SwiftPM doesn't, so `bundle.sh` does it by hand:
+  1. It builds with `-emit-const-values` and `-const-gather-protocols-file` (Xcode's protocol list, written to
+     `.build/appintents-protocols.json`), so the compiler records the intents' compile-time values: one
+     `Clementine.swiftconstvalues` for release (whole-module) builds, one `<File>.swift.swiftconstvalues` per source
+     in debug builds (leftovers from deleted sources are skipped).
+  2. It runs `xcrun appintentsmetadataprocessor` with the source list, those files and the app binary, writing into
+     `Contents/Resources` before signing.
+  3. It fails the bundle if `extract.actionsdata` doesn't list `ConvertWithClementineIntent`.
+
+  This needs a full Xcode (CI has one). The extra flags make `bundle.sh`'s build differ from a plain
+  `swift build`, so the Clementine module recompiles when you alternate between them. The intents set
+  `openAppWhenRun = false`: the system launches Clementine in the background if needed and `perform()` runs
+  in-process, through `ShortcutRunner` and `BatchRunner` like the CLI. Inputs without a file URL are written to a
+  temporary folder first, text results come back as `.txt` files, and errors are rethrown as `ShortcutError` so
+  Shortcuts shows the plain message. `ClementineActionQuery` reads the intent's files through
+  `@IntentParameterDependency` to suggest only actions that fit them. Note that the app's own `Parameter` type
+  shadows App Intents' `Parameter` alias, so intents use `@IntentParameter`.
 - **Services:** `Info.plist › NSServices` declares "Convert with Clementine" (`convertFiles`) and
   "Clementine Tools" (`toolFiles`) for `public.item` files. `ServiceProvider.register()` sets
   `NSApp.servicesProvider` and calls `NSUpdateDynamicServices()`. Both handlers read file URLs from the
@@ -451,5 +476,7 @@ static array until `willClose`.
 - `make ui-test` runs `.build/debug/Clementine --ui-test [filter…]`, which needs a logged-in GUI session. Tag
   controls with `.uiTestID("…")` (debug-only frame registry in `Support/UITestID.swift`) and add suites to
   `UITest.all`.
+- `--shortcut-run <action-id> [--set key=value]… file…` (debug) runs `ShortcutRunner`, the code behind the
+  Shortcuts actions, and prints what the intent would return.
 - `--render-wheel out.png [--tools] [--hover N] [--light] [--click [--chip]] file…`, `--render-ui <dir>`
   (debug) and `--demo-wheel` (live wheel, app mode) are visual dev aids.

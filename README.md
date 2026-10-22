@@ -129,7 +129,8 @@ The wheel only shows what makes sense for the file you're holding, and the slice
 
 **Compress**, hit a **Target Size**, **Resize**, **Crop**, **Rotate/Flip**, and **Edit** exposure, brightness,
 contrast, saturation, highlights and shadows with a live preview. **Redact** faces and text, **Annotate** with arrows,
-shapes and text, **Add BG** (a gradient backdrop with padding, rounded corners and a shadow), **Read QR** codes, and view, edit or remove **Metadata**
+shapes and text, **Cut Out Subject** (removes the background and leaves the person, pet or object on transparency,
+on-device with Apple's Vision), **Add BG** (a gradient backdrop with padding, rounded corners and a shadow), **Read QR** codes, and view, edit or remove **Metadata**
 (including location). Drop two or more images to make a **Collage** or a **PDF**.
 
 ### Video
@@ -277,12 +278,31 @@ wheels.
 **A command line, too.** Every action on the wheel also runs from Terminal with the same engine, so you can script
 it. See [For developers](#for-developers).
 
+**Shortcuts.** Clementine's actions are in the Shortcuts app too. See [Shortcuts](#shortcuts).
+
 **Settings.** Turn the wheel off while dragging, choose whether finished files are revealed in Finder, launch at
 login, set JPEG/HEIC quality, and point Clementine at an extra folder of command-line tools.
 
 </td>
 </tr>
 </table>
+
+## Shortcuts
+
+Clementine adds three actions to the Shortcuts app (search for "Clementine" in the action list):
+
+| Action | What it does |
+| --- | --- |
+| **Convert with Clementine** | Runs any conversion or tool on the files you pass it. Pick the action from a list; once the shortcut has files, the list shows only what fits them, like the wheel. **Settings** (optional) takes `key=value` lines, the same as the command line's `--set` (for example `level=Smallest` for Compress). |
+| **Remove Background with Clementine** | Cuts the subject out of images onto transparency. Choose PNG, HEIC or WebP, and whether to crop to the subject. |
+| **Convert Images with Clementine** | Converts images to JPG, PNG, HEIC, WebP, AVIF, TIFF, GIF or PDF. Images already in that format pass through. |
+
+Each returns the new files, so the next step of the shortcut can use them. As with the wheel, results are saved next
+to the originals. Files without a place on disk (an image from the clipboard, say) are worked on in a temporary
+folder, so save the results somewhere if you want to keep them. Clementine doesn't need to be running: Shortcuts
+starts it in the background and the action runs without opening a window. Shortcuts runs don't appear in History.
+
+The action ids and settings for **Convert with Clementine** are the ones in [docs/CLI.md](docs/CLI.md).
 
 ## Install
 
@@ -371,6 +391,8 @@ dragging" is on in Settings and that Clementine is running (look for it in the m
 - **Split** copies streams without re-encoding, so cuts land on keyframes and part lengths are approximate.
 - **DOCX → PDF** keeps text styling but not embedded images.
 - **RAR** can be extracted but not created.
+- **Cut Out Subject** uses the same model as Photos' "Copy Subject": it finds people, pets and distinct objects, not
+  arbitrary regions, and keeps every subject it finds. Without a clear subject it says so instead of guessing.
 - **Open Files…** shows the standard open panel while another app is still active; click into it before typing.
 
 ## Contributing
@@ -435,7 +457,7 @@ $BIN --run tool.image.crop --set 'crop={"x":0,"y":0,"w":800,"h":600}' photo.jpg 
 
 ```
 Sources/Clementine/
-  App/          entry point, menu bar, settings, CLI, welcome tour, Sparkle updater
+  App/          entry point, menu bar, settings, CLI, Shortcuts actions (App Intents), welcome tour, Sparkle updater
   Drag/         DragMonitor (spots file drags + modifier keys), WheelController (glue)
   Wheel/        WheelPanel (floating drop target), WheelView (SwiftUI), WheelModel (geometry, hit-testing)
   Actions/      Action model + registry; ConvertActions and ToolActions are the catalog

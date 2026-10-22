@@ -11,6 +11,10 @@ reporter, and it never uploads your files or anything about them.
 - To notice a drag, Clementine reads the file paths on the system's drag pasteboard while a drag is in
   progress. It doesn't read the files until you drop them on a slice.
 - Converting an HTML file doesn't fetch anything it references from the web (images, stylesheets, scripts).
+- Cut Out Subject finds the subject with Apple's Vision framework, on your Mac.
+- Shortcuts actions run the same way, inside Clementine. Files a shortcut passes without a location on disk (an
+  image from the clipboard, say) are written to a folder in your user's temporary directory
+  (`$TMPDIR/Clementine Shortcuts/`) with their results; macOS clears it over time.
 
 ## Network
 
