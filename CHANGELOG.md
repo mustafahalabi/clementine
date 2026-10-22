@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 — unreleased
+## 0.1.1 — 2026-10-22
 
 A hardening release: safer archives and outputs, nothing left behind when jobs stop, stricter privacy, and a
 calmer first run. Apple silicon, macOS 14 or later.
