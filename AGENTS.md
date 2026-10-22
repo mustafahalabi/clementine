@@ -43,8 +43,10 @@ Sparkle updates, CI. Every feature was also driven live on the build Mac with re
 
 Known issues and loose ends (none block use):
 
-- The CLI silently maps an unknown choice label to option 0 and a non-numeric number to 0 (`App/CLI.swift`);
-  number ranges aren't validated by the CLI.
+- The CLI enforces choices and slider ranges but not typed-number ranges; engines report those (e.g. Split's
+  1-second minimum).
+- Outputs are written in place, not to a temp name renamed at the end: quit/interrupt clean up, but a crash of
+  Clementine itself can leave a partial file.
 - `hasSeenOnboarding` and `@AppStorage` values use `UserDefaults.standard`, so `CLEMENTINE_DEFAULTS_SUITE` doesn't
   isolate them in tests.
 - `--undo` moves files to the real Trash even when `CLEMENTINE_SUPPORT_DIR` is set.
