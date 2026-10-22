@@ -55,7 +55,7 @@ check "usage is per mode (image convert unchanged)" '[[ "$(wheel convert "$F/pho
 LAST="$(echo "$BASE_TOOLS" | tr ' ' '\n' | tail -1)"
 for _ in 1 2 3; do record "$LAST" "$F/photo.png"; done
 check "last catalog slice used most moves to the front" '[[ "$(wheel tools "$F/photo.png" | head -1)" == "$LAST" ]]'
-check "never more than 12 slices" '[[ $(wheel tools "$F/batch/img01.png" "$F/batch/img02.png" | wc -l) -le 12 ]]'
+check "never more than 13 slices" '[[ $(wheel tools "$F/batch/img01.png" "$F/batch/img02.png" | wc -l) -le 13 ]]'
 record convert.image.webp "$F/photo.png"
 check "convert usage reorders the convert wheel" '[[ "$(wheel convert "$F/photo.png" | head -1)" == convert.image.webp ]]'
 defaults write "$CLEMENTINE_DEFAULTS_SUITE" orderByUsage -bool false

@@ -21,7 +21,7 @@ enum BackgroundRemover {
     /// The image with everything but its foreground subjects transparent, optionally cropped to them.
     static func cutOut(_ image: CGImage, crop: Bool, name: String = "the image") throws -> CGImage {
         let noSubject = ClementineError.message(
-            "No subject found in \(name). Remove Background works on photos with a clear foreground, like a person, pet or object.")
+            "No subject found in \(name). It needs a photo with a clear foreground subject, like a person, pet or object.")
         // Vision rejects tiny images with a raw error; there's no subject to find in those anyway.
         guard image.width > 2, image.height > 2 else { throw noSubject }
 
