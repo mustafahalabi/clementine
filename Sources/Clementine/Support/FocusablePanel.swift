@@ -64,3 +64,18 @@ final class FocusablePanel: NSPanel {
         setFrame(home, display: false) // so the next present() starts from the same spot
     }
 }
+
+extension NSWindow {
+    /// Runs `body` when the window closes, once, then stops observing.
+    @MainActor
+    func onceClosed(_ body: @escaping @MainActor @Sendable () -> Void) {
+        // Only touched on the main queue (the observer's queue), so sharing it with the @Sendable closure is safe.
+        final class Token: @unchecked Sendable { var observer: NSObjectProtocol? }
+        let token = Token()
+        token.observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: self, queue: .main) { _ in
+            MainActor.assumeIsolated { body() }
+            if let observer = token.observer { NotificationCenter.default.removeObserver(observer) }
+            token.observer = nil
+        }
+    }
+}

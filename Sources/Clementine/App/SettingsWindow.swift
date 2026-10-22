@@ -6,21 +6,44 @@ import SwiftUI
 enum SettingsWindow {
     private static var window: FocusablePanel?
     private static let anchor = TopAnchor()
+    private static let fit = SettingsFit()
 
     static func show() {
+        // Cap the content to the screen first, so the window is sized by it before center() places it.
+        fit.limit(to: window?.screen ?? NSScreen.main)
         if window == nil {
             let window = FocusablePanel()
             window.title = "Clementine Settings" // hidden, but used by Mission Control and VoiceOver
-            window.host(SettingsView())
+            window.host(SettingsView(fit: fit))
             window.center()
             window.delegate = anchor
             self.window = window
         }
+        if let window { TopAnchor.keepOnScreen(window) }
         window?.present()
     }
 }
 
-/// Keeps the window's top edge still when switching tabs changes its height, as macOS settings windows do.
+/// The tallest the Settings content may be: its screen's visible height, less the title bar. Taller tabs
+/// scroll instead of running off the bottom of a short (1080p) screen.
+@MainActor
+final class SettingsFit: ObservableObject {
+    @Published var maxHeight: CGFloat?
+
+    init(maxHeight: CGFloat? = nil) {
+        self.maxHeight = maxHeight
+    }
+
+    func limit(to screen: NSScreen?) {
+        guard let screen else { return }
+        let chrome = NSWindow.frameRect(forContentRect: .zero, styleMask: [.titled, .fullSizeContentView]).height
+        let height = (screen.visibleFrame.height - max(chrome, 28)).rounded(.down)
+        if maxHeight != height { maxHeight = height }
+    }
+}
+
+/// Keeps the window's top edge still when switching tabs changes its height, as macOS settings windows do,
+/// without letting the bottom go below the Dock.
 private final class TopAnchor: NSObject, NSWindowDelegate {
     private var top: CGFloat?
 
@@ -29,7 +52,18 @@ private final class TopAnchor: NSObject, NSWindowDelegate {
         if let top, window.isVisible, abs(window.frame.maxY - top) > 0.5 {
             window.setFrameOrigin(NSPoint(x: window.frame.minX, y: top - window.frame.height))
         }
+        MainActor.assumeIsolated { Self.keepOnScreen(window) }
         top = window.frame.maxY
+    }
+
+    /// Slides the window up (or down) so all of it is inside its screen's visible frame.
+    @MainActor
+    static func keepOnScreen(_ window: NSWindow) {
+        guard let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        var origin = window.frame.origin
+        if window.frame.minY < visible.minY { origin.y = visible.minY }
+        if origin.y + window.frame.height > visible.maxY { origin.y = max(visible.minY, visible.maxY - window.frame.height) }
+        if origin != window.frame.origin { window.setFrameOrigin(origin) }
     }
 
     func windowDidMove(_ notification: Notification) {
@@ -88,6 +122,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @State private var tab: SettingsTab
+    @ObservedObject private var fit: SettingsFit
     @AppStorage(Prefs.enabledKey) private var enabled = true
     @AppStorage(Prefs.revealKey) private var reveal = true
     @AppStorage(Prefs.controlWheelKey) private var controlWheel = true
@@ -97,8 +132,9 @@ struct SettingsView: View {
     @State private var launchAtLogin = LaunchAtLogin.isOn
     @State private var loginError: String?
 
-    init(tab: SettingsTab = .general) {
+    init(tab: SettingsTab = .general, fit: SettingsFit? = nil) {
         _tab = State(initialValue: tab)
+        self.fit = fit ?? SettingsFit()
     }
 
     var body: some View {
@@ -108,14 +144,27 @@ struct SettingsView: View {
                 .padding(.top, 6)
             SettingsTabs(selection: $tab)
                 .padding(.top, 14)
-            switch tab {
-            case .general: form
-            case .wheel: WheelSettingsView()
+            // Natural height when the tab fits under `fit.maxHeight`; otherwise the form fills what's left and
+            // scrolls itself. (Not a ScrollView around it: the form's own scroll view would swallow the wheel.)
+            ViewThatFits(in: .vertical) {
+                tabContent
+                    .scrollDisabled(true)
+                    .fixedSize(horizontal: false, vertical: true)
+                tabContent
             }
         }
         .frame(width: 520)
+        .frame(maxHeight: fit.maxHeight)
         .background(WindowBackdrop())
         .tint(Theme.tangerine)
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch tab {
+        case .general: form
+        case .wheel: WheelSettingsView()
+        }
     }
 
     private var form: some View {
@@ -177,12 +226,11 @@ struct SettingsView: View {
                      : "Install missing tools with `brew install ffmpeg webp`.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .uiTestID("settings.toolsFooter")
             }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .scrollDisabled(true)
-        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

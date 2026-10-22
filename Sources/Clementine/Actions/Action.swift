@@ -150,6 +150,8 @@ struct Action: Identifiable {
     var parameters: [Parameter] = []
     /// Live preview for the parameter sheet (single image inputs).
     var preview: ((URL, ParamValues) async -> NSImage?)? = nil
+    /// Shown in the preview area when `preview` returns nil, instead of a spinner that never stops.
+    var previewMissing = "No preview"
     /// A custom editor window (crop canvas, waveform, page grid…) shown instead of the generic parameter sheet.
     /// It calls `apply` with the chosen values (complex data goes in `.text` values, e.g. JSON); the job then
     /// runs through `run` like any other, so the same action also works from the CLI with `--set`.

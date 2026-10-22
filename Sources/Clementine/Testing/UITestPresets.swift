@@ -22,6 +22,19 @@ extension UITest {
     /// Return and Esc belong to the naming row while it's open; outside it they still Apply and Cancel.
     private static var presetSheet: Suite {
         Suite(name: "preset sheet") { t in
+            // Suggested names fit a slice's caption without being cut short.
+            let withSettings = ActionRegistry.all.filter { !$0.parameters.isEmpty && $0.editor == nil }
+            let names = withSettings.map { ($0.id, PresetStore.suggestedName(for: $0, values: $0.defaults)) }
+            let long = names.filter { !SliceCaption.fits($0.1) }
+            t.check(long.isEmpty, "suggested preset names fit a slice's caption (too long: \(long))")
+            t.check(names.first { $0.0 == "tool.compress" }?.1 == "Compress · Balanced", "a name that fits keeps its action")
+            if let fit = ActionRegistry.find("tool.fit") {
+                var small = fit.defaults
+                small.storage["megabytes"] = .number(0.05)
+                let name = PresetStore.suggestedName(for: fit, values: small)
+                t.check(name == "0.05 MB", "one too long for a slice drops the action (\(name))")
+            }
+
             isolatedSupport(t) {
                 guard let fit = ActionRegistry.find("tool.fit") else { return t.check(false, "tool.fit exists") }
                 var values = fit.defaults
@@ -72,7 +85,7 @@ extension UITest {
                 guard let first = try? PresetStore.shared.add(name: "Small", action: "tool.image.resize", values: ["size": "25%"]),
                       let second = try? PresetStore.shared.add(name: "Tiny", action: "tool.compress", values: ["level": "Smallest"])
                 else { return t.check(false, "presets can be added") }
-                let view = WheelSettingsView(kind: "image", mode: .tools).frame(width: 520).background(WindowBackdrop())
+                let view = WheelSettingsView(kind: "image", mode: .tools).scrollDisabled(true).fixedSize(horizontal: false, vertical: true).frame(width: 520).background(WindowBackdrop())
                 let window = t.open(view, size: NSSize(width: 520, height: 760))
                 t.settle(0.8)
 
@@ -92,8 +105,30 @@ extension UITest {
                         t.pressReturn(in: window)
                         t.wait(2) { PresetStore.shared.presets.contains { $0.name == "Half size" } }
                         t.check(PresetStore.shared.presets.first { $0.id == first.id }?.name == "Half size", "Return renames a preset")
+                        t.settle(0.3)
+                        t.check(fieldTexts(in: window).contains("Half size"), "…and the row shows the new name (\(fieldTexts(in: window)))")
                     } else {
                         t.check(false, "clicking a preset's name puts the cursor in it")
+                    }
+                }
+
+                // Tab out of the field: saves like Return, and the row must keep the new name, not the old one.
+                if let field = t.frame(id: "presets.name.\(first.id)", in: window) {
+                    t.click(field.center, in: window)
+                    if let editor = window.firstResponder as? NSTextView {
+                        editor.selectAll(nil)
+                        t.type("Quarter", in: window)
+                        t.key("\t", keyCode: 48, in: window)
+                        if window.firstResponder is NSTextView, (window.firstResponder as? NSTextView)?.string == "Quarter" {
+                            window.makeFirstResponder(nil) // nothing to Tab to off-screen: leave the field directly
+                        }
+                        t.wait(2) { PresetStore.shared.presets.contains { $0.name == "Quarter" } }
+                        t.check(PresetStore.shared.presets.first { $0.id == first.id }?.name == "Quarter", "Tab out of a name saves it")
+                        t.settle(0.5)
+                        let texts = fieldTexts(in: window)
+                        t.check(texts.contains("Quarter") && !texts.contains("Half size"), "…and the row shows the new name (\(texts))")
+                    } else {
+                        t.check(false, "clicking a preset's name again puts the cursor in it")
                     }
                 }
 
@@ -102,6 +137,19 @@ extension UITest {
                 t.check(!HiddenActions.ids.contains(second.id), "deleting forgets that it was hidden")
             }
         }
+    }
+
+    /// What every text field in `window` shows (the field editor's text while one is being edited).
+    @MainActor
+    private static func fieldTexts(in window: NSWindow) -> [String] {
+        func walk(_ view: NSView) -> [String] {
+            var found: [String] = []
+            if let field = view as? NSTextField, field.isEditable {
+                if let editor = field.currentEditor() as? NSTextView { found.append(editor.string) } else { found.append(field.stringValue) }
+            }
+            return found + view.subviews.flatMap(walk)
+        }
+        return window.contentView.map(walk) ?? []
     }
 
     /// The ⌃ rules, the ⌃ wheel's slices, Tab cycling through three wheels, and a copied value on the job card.

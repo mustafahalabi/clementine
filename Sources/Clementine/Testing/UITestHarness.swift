@@ -40,7 +40,7 @@ enum UITest {
 
     /// Every suite. Areas add theirs here (keep the list sorted by area).
     static var all: [Suite] {
-        harnessSelfTest + firstRun + midline + presets + lifecycle // lifecycle last: it stops tool launches for good
+        harnessSelfTest + firstRun + midline + presets + settings + lifecycle // lifecycle last: it stops tool launches for good
     }
 
     /// Proves the harness itself: a button press, a drag and typing all reach SwiftUI.
@@ -308,6 +308,24 @@ final class UITestContext {
             window.sendEvent(event)
         }
         settle(0.1)
+    }
+
+    /// A scroll-wheel turn of `pixels` (negative moves down the page) over `point`, sent through the window as
+    /// AppKit would deliver a real one.
+    func scroll(by pixels: Int32, at point: NSPoint, in window: NSWindow) {
+        func event(at location: CGPoint) -> NSEvent? {
+            guard let cgEvent = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: pixels, wheel2: 0, wheel3: 0)
+            else { return nil }
+            cgEvent.location = location
+            return NSEvent(cgEvent: cgEvent)
+        }
+        // A window-less event's locationInWindow is a screen position (in a space that's awkward to predict for
+        // off-screen windows), so measure where a first try lands and shift it onto `point`.
+        guard let probe = event(at: .zero) else { return check(false, "a scroll event can be made") }
+        let landed = probe.locationInWindow
+        guard let scroll = event(at: CGPoint(x: point.x - landed.x, y: landed.y - point.y)) else { return }
+        window.sendEvent(scroll)
+        settle(0.3)
     }
 
     func pressReturn(in window: NSWindow) { key("\r", keyCode: 36, in: window) }

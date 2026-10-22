@@ -67,7 +67,7 @@ check "Open in Terminal opens each folder once (the folder itself for folders)" 
 OUT="$("$BIN" --run file.reveal "$F/photo.png" 2>"$WORK/err.txt")"
 check "Reveal in Finder" '[[ "$OUT" == "Shown in Finder" ]] && grep -qx "effect: reveal $F/photo.png" "$WORK/err.txt"'
 OUT="$("$BIN" --run file.airdrop "$F/photo.png" "$F/clip.mp4" 2>"$WORK/err.txt")"
-check "AirDrop gets every file at once" '[[ "$OUT" == "Sent with AirDrop" ]] && grep -qx "effect: airdrop $F/photo.png | $F/clip.mp4" "$WORK/err.txt"'
+check "AirDrop gets every file at once" '[[ "$OUT" == "AirDrop closed" ]] && grep -qx "effect: airdrop $F/photo.png | $F/clip.mp4" "$WORK/err.txt"'
 check "file actions write no files" '[[ "$(count_files)" == "$BEFORE" ]]'
 "$BIN" --run file.sha256 --record "$F/clip.mp4" >/dev/null
 "$BIN" --run file.sha256 --record "$F/clip.mp4" >/dev/null
