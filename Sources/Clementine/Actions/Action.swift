@@ -135,18 +135,21 @@ func kinds(_ kinds: FileKind...) -> (FileItem) -> Bool {
 }
 
 enum ActionRegistry {
+    /// Slices per wheel. 13 is the most that keeps two-line labels readable (one image matches exactly 13 tools).
+    static let maxSlices = 13
+
     static let all: [Action] = ConvertActions.all + ToolActions.all + ConvertActions.archiveCreate
 
     static func find(_ id: String) -> Action? {
         all.first { $0.id == id }
     }
 
-    /// The slices to show for these files: visible candidates, most used first, at most 12 so labels stay readable.
+    /// The slices to show for these files: visible candidates, most used first, at most `maxSlices`.
     static func actions(for urls: [URL], mode: WheelMode) -> [Action] {
         let hidden = HiddenActions.ids
         let visible = candidates(for: urls, mode: mode).filter { !hidden.contains($0.id) }
         let arranged = ActionUsage.arrange(visible, bucket: ActionUsage.bucket(for: urls.map(FileItem.init), mode: mode))
-        return Array(arranged.prefix(12))
+        return Array(arranged.prefix(maxSlices))
     }
 
     /// Every action that applies to these files, in catalog order, hidden ones included.

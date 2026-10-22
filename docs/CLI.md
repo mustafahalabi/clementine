@@ -37,14 +37,14 @@ Tools (⌥⇧)
 ```
 
 - Shows visible slices in wheel order (most used first, see [Usage and history](#usage-history-and-settings)),
-  at most 12 per wheel, then any slices hidden in Settings › Wheel, marked `(hidden)`.
+  at most 13 per wheel, then any slices hidden in Settings › Wheel, marked `(hidden)`.
 - An action appears only if every file matches its accepted kinds and the file count is within its min/max inputs.
 - The archive actions (`archive.zip/tar/gzip`) are added to the convert wheel when nothing else applies, or when
   every item is a folder or an unknown type. A mix like image + audio therefore gets archives on ⇧ and only the
   shared tools (Compress, Target Size, Metadata, Remove Metadata) on ⌥⇧.
 - No files: prints usage and exits 2.
 
-### `--run <action-id> [--set key=value]… [--record] <file>…`
+### `--run <action-id> [--set key=value]… [--record] [--software] <file>…`
 
 Runs one action on the files. Options and files can be mixed in any order after the action id.
 
@@ -74,6 +74,12 @@ keep their defaults.
 
 **`--record`** also does what a wheel drop does: it updates usage counts (wheel ordering) and, if the run produced
 files, adds a history entry. Without it, `--run` leaves no trace.
+
+**`--software`** encodes H.264/HEVC with x264/x265 for this run even when Settings › Use hardware encoding for
+video is on (the default). Hardware encoding (VideoToolbox) covers Convert to MP4/MOV/MKV, Trim, Speed and Rotate
+(also on TS/FLV/3GP) and Join; if VideoToolbox fails (e.g. a virtual Mac without a media engine) the same job reruns in software by itself.
+Compress and Target Size always use x264, which makes smaller files at the same quality. The setting is the
+`hardwareEncoding` bool in the defaults domain.
 
 **Batches.** Non-batch actions run once per file, several at a time: half the active cores for image and
 document work, at most 2 when any input is audio/video (ffmpeg is already multithreaded), and an action's own
@@ -270,6 +276,12 @@ None of these take parameters.
 | `convert.archive.gzip` | GZIP | archive, not gz/tgz | 1+ | no |
 | `archive.zip` `archive.tar` `archive.gzip` | ZIP, TAR, GZIP | anything (fallback, see `--list`) | 1+ | **yes** |
 
+Video: HDR sources (PQ or HLG, e.g. iPhone HDR) converted to any format are tone-mapped to 8-bit SDR and tagged
+BT.709 (zscale + tonemap when the ffmpeg in use has them, a lutrgb/colorspace curve otherwise); Snapshot, GIF,
+Compress and Target Size do the same. Trim, Speed and Rotate keep HDR as 10-bit HEVC (`hvc1`) when the file is
+MP4, M4V or MOV. Edits on TS/M2TS/MTS/FLV/3GP write H.264 + AAC and on MPG/MPEG high-quality MPEG-2, instead of
+ffmpeg's 200 kb/s defaults.
+
 Documents: HTML is converted fully offline. Remote images, stylesheets, fonts, frames, `<base>`, meta refresh and
 scripts are removed before import. Relative, `file:` and `data:` images still load. Plain text and subtitles are
 read as UTF-8, UTF-16/32 (BOM, or BOM-less UTF-16) or Windows-1252. PDFs use the system's default paper size with 1"
@@ -296,6 +308,7 @@ Listed in wheel order. *Editor* means the app opens a custom window, which produ
 | `tool.image.redact` | Redact (editor) | image | 1–1 | no | `boxes` (text, JSON or `auto`) empty, required; `style` (choice) 0: 0 Pixelate, 1 Blur, 2 Black |
 | `tool.image.annotate` | Annotate (editor) | image | 1–1 | no | `shapes` (text, JSON) empty, required |
 | `tool.image.background` | Add BG (live preview) | image | 1+ | no | `background` (choice) 0: 0 Sunset, 1 Ocean, 2 Mint, 3 Lavender, 4 Sky, 5 White, 6 Graphite; `padding` (slider) 0.08 (0…0.3, fraction of the long edge); `corners` (slider) 0.02 (0…0.1); `shadow` (choice) 0: 0 On, 1 Off |
+| `tool.image.removebg` | Cut Out Subject (live preview) | image except svg | 1+ | no | `format` (choice) 0: 0 PNG, 1 HEIC, 2 WebP (all keep transparency; WebP needs `cwebp`); `crop` (choice) 0: 0 Off, 1 On (crop to the subject). Vision subject lifting, on-device; fails with "No subject found" when there's nothing to lift. Output `<name> (cut out).<ext>`. |
 | `tool.image.qr` | Read QR | image | 1+ | no | none. Text result. |
 | `tool.image.collage` | Collage | image | 2+ | **yes** | `layout` (choice) 0: 0 Grid, 1 Row, 2 Column |
 | `tool.image.pdf` | Make PDF | image | 2+ | **yes** | none. One page per image, written one at a time. Page size: the image's own dpi if it declares more than 72, scaled down to fit 842 pt (A4's long edge). Upright RGB/gray JPEGs are embedded as-is; other images (and ones over 400 dpi on the page, which are downscaled) are re-encoded as JPEG 0.9, with transparency kept as a mask. `convert.image.pdf` makes the same kind of page. |
@@ -305,7 +318,8 @@ Listed in wheel order. *Editor* means the app opens a custom window, which produ
 | `tool.video.snapshot` | Snapshot | video | 1+ | no | `frames` (choice) 0: 0 Middle frame, 1 First frame, 2 10 across the video (folder) |
 | `tool.video.mute` | Mute | video | 1+ | no | none |
 | `tool.video.rotate` | Rotate | video | 1+ | no | `rotation` (choice) 0: 0 90° clockwise, 1 90° counterclockwise, 2 180°, 3 Flip horizontally |
-| `tool.video.join` | Join | video | 2+ | **yes** | none |
+| `tool.video.join` | Join | video | 2+ | **yes** | none. Canvas: the first clip shaped like most clips (portrait phone clips give a portrait video), after rotation; frame rate: the clips' common rate, else the highest (≤ 60). HDR stays HDR only if every clip has the same HDR transfer. |
+| `tool.video.gif` | GIF | video | 1+ | no | `fps` (choice) 2: 0 10 fps, 1 12 fps, 2 15 fps, 3 24 fps, 4 30 fps; `width` (choice) 3: 0 320 px, 1 480 px, 2 640 px, 3 720 px, 4 960 px, 5 1280 px, 6 Original (never upscales); `megabytes` (number, MB) 0 = no limit, range 0–500: re-encodes narrower, then at fewer fps (to 8), up to 4 tries, and fails with a message if it still doesn't fit. `convert.media.gif` is this with the defaults. |
 | `tool.audio.normalize` | Normalize | audio | 1+ | no | none (loudnorm to −16 LUFS) |
 | `tool.audio.silence` | Trim Silence | audio | 1+ | no | none (cuts leading/trailing silence under −50 dB) |
 | `tool.audio.channels` | Channels (editor) | audio | 1+ | no | `channels` (choice) 0: 0 Mono, 1 Stereo, 2 Swap; `left` (slider) 1 (0…2); `right` (slider) 1 (0…2) |
@@ -318,7 +332,7 @@ Listed in wheel order. *Editor* means the app opens a custom window, which produ
 | `tool.metadata` | Metadata (editor) | image, video, audio, pdf | 1+ | no | `fields` (text, JSON) empty. With it empty, the run shows all metadata as a text result. Otherwise it saves an `(edited)` copy. |
 | `tool.metadata.strip` | Remove Metadata | image, video, audio, pdf | 1+ | no | none |
 
-The wheel shows at most 12 slices. A single image matches exactly 12 tools. With two or more images, Redact and
+The wheel shows at most 13 slices. A single image matches exactly 13 tools. With two or more images, Redact and
 Annotate drop out and Collage and Make PDF come in.
 
 ### Text parameter formats

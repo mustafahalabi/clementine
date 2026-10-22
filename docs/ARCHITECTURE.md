@@ -55,11 +55,11 @@ Process entry (`App/ClementineApp.swift`, `Entry.main`): debug-only `--render-ui
 
 | Folder | Key types |
 | --- | --- |
-| `App/` | `Entry`/`ClementineApp`/`AppDelegate` (entry, menu bar). `CLI` (headless commands). `ServiceProvider` (Finder Services). `Updater` (Sparkle wrapper). `HistoryMenu` (Open Files…, Recent, Undo). `SettingsWindow` (General + Wheel tabs), `WheelSettings` (`WheelCatalog`, `WheelPrefs`, live preview). `OnboardingWindow` (welcome tour, launch-at-login via `SMAppService`). |
+| `App/` | `Entry`/`ClementineApp`/`AppDelegate` (entry, menu bar). `CLI` (headless commands). `ServiceProvider` (Finder Services). `Updater` (Sparkle wrapper). `HistoryMenu` (Open Files…, Recent, Undo). `SettingsWindow` (General + Wheel tabs), `WheelSettings` (`WheelCatalog`, `WheelPrefs`, live preview). `OnboardingWindow` (welcome tour, launch-at-login via `SMAppService`). `Shortcuts.swift`: App Intents (`ConvertWithClementineIntent`, `RemoveBackgroundIntent`, `ConvertImagesIntent`, `ClementineActionEntity` + query) over `ShortcutRunner`. |
 | `Drag/` | `DragMonitor` (detects file drags + modifiers), `WheelController` (glue: monitor → panel → `JobRunner`; also `--demo-wheel`, `openFiles()`, `showClickable`). |
 | `Wheel/` | `WheelPanel` (+ private `WheelWindow`, `DropCatcher`), `WheelModel` (actions, geometry, hit-testing, thumbnail), `WheelView` (SwiftUI ring, `Slice` shape, `Hub`, `ModeChip`, `EmptyNotice`). |
 | `Actions/` | `Action`, `Parameter`, `ParamValue(s)`, `JobContext`, `JobOutput`, `Editor`, `WheelMode`, `ActionRegistry` (`Action.swift`). Catalogs: `ConvertActions`, `ToolActions`. `WheelOrdering.swift`: `HiddenActions`, `ActionUsage` (frecency). |
-| `Engines/` | `ImageEngine` (ImageIO load/encode, `ImageFormat`), `ImageTools` (⌥⇧ image tools, Core Image), `ImageEdits` (full-res crop/redact/annotate from JSON), `PDFEngine` (PDFKit, page specs), `DocumentEngine` (`@MainActor`, AppKit text system), `MediaEngine` + `FFmpeg` (probe, encode args, progress), `ArchiveEngine` (system zip/bsdtar/gzip/bzip2), `SubtitleEngine`, `MetadataEngine` (read/write common fields, `(edited)` copies), `ProcessRunner` + `ToolLocator`. |
+| `Engines/` | `ImageEngine` (ImageIO load/encode, `ImageFormat`), `ImageTools` (⌥⇧ image tools, Core Image), `ImageEdits` (full-res crop/redact/annotate from JSON), `BackgroundRemover` (Vision subject lifting for Cut Out Subject), `PDFEngine` (PDFKit, page specs), `DocumentEngine` (`@MainActor`, AppKit text system), `MediaEngine` + `FFmpeg` (probe, encode args, progress), `ArchiveEngine` (system zip/bsdtar/gzip/bzip2), `SubtitleEngine`, `MetadataEngine` (read/write common fields, `(edited)` copies), `ProcessRunner` + `ToolLocator`. |
 | `ImageEditor/` | `ImageEditorWindow` (panel + `EditorShell`), `EditorCanvas` (`EditorImage`, `CanvasMapping`, `RectHandle`, toolbar pieces), `CropEditor`, `RedactEditor`, `AnnotateEditor`. |
 | `Waveform/` | `Waveform` + `WaveformLoader` (peaks, in-memory cache), `Playback` (AVPlayer, `PreviewRenders` in a temp folder), `WaveformEditorModel` (`EditorModel.swift`), `WaveformViews` (shared views, `EditorWindow`), `TrimEditor`, `BleepEditor`, `ChannelsEditor`. |
 | `Jobs/` | `JobRunner`/`RunningJob`, `BatchRunner`/`BatchReport`, `HistoryStore`/`HistoryEntry` (`History.swift`), `ProgressPanel`/`JobView`, `ParameterWindow`/`ParameterForm`, `ResultWindow`, `PageOrganizer`, `MetadataEditor`, `UIPreviewRenderer` (debug `--render-ui`). |
@@ -247,15 +247,27 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   keeping the tool's own lines below it as "ffmpeg said: …". A stop we asked for is a `CancellationError`
   whatever the exit status (see Cancellation above).
 - **FFmpeg** (`FFmpeg.swift`):
-  - `probe`: ffprobe JSON with `format=duration:stream=…:stream_disposition=attached_pic`. It reads duration,
-    audio channels, the first real video stream (skipping attached pictures) and subtitle codecs.
+  - `probe`: ffprobe JSON with `format=duration:stream=…:stream_disposition=attached_pic:stream_side_data=rotation`.
+    It reads duration, audio channels, the first real video stream (skipping attached pictures) with its colour
+    tags and display-matrix rotation (`isHDR`, `displayWidth/Height`), and subtitle codecs.
   - `readable`: rejects empty files and files with no audio or video.
   - `run`: adds `-hide_banner -nostdin -n -loglevel error -nostats -progress pipe:1` and turns `out_time_us=`
     into a fraction of the duration. `-n` because outputs always come from `Output`: a file already at that path
     isn't ours, so ffmpeg must fail rather than overwrite it.
-  - `transcode`: wraps the run in `Output.produce`.
-  - `encodeArgs`: per-container codec presets, with even-size scaling for H.264/MPEG-4/WMV and a palette
-    pipeline for GIF. `streamMaps` keeps every stream and converts subtitles per container.
+  - `transcode`: wraps the run in `Output.produce`; with `hardware: true` it goes through `encode`.
+  - `encode` + `Hardware`: rewrites software x264/x265 CRF settings for `h264_videotoolbox`/`hevc_videotoolbox`
+    (`-q:v`, calibrated with VMAF: CRF 20 ≈ q 65) when Settings › Use hardware encoding for video is on and the CLI wasn't
+    given `--software`. If VideoToolbox fails, the partial output is deleted and the software args run. Engines
+    keep writing plain x264 args; Compress and Target Size don't ask for hardware (x264 is ~25% smaller at equal
+    quality, and two-pass has no VideoToolbox equivalent).
+  - `color(for:ext:keepHDR:)` → `Color`: `.unchanged` for SDR, `.toneMap(filters)` for HDR into 8-bit outputs
+    (zscale + tonemap mobius when the ffmpeg has them, checked once per ffmpeg path with `hasFilter`; otherwise a
+    PQ/HLG → BT.709 lutrgb curve plus `colorspace`), or `.hdr` to keep 10-bit HEVC (`hevcHDR`) for edits into
+    MP4/M4V/MOV. Tone-mapped outputs get BT.709 tags.
+  - `encodeArgs`: per-container codec presets (H.264 + AAC also for TS/FLV/3GP, MPEG-2 for MPG), with even-size
+    scaling and the `Color` plan. `gifArgs` is the GIF pipeline (fps, width, one `stats_mode=diff` palette,
+    sierra2_4a dithering redrawn only where frames change). `streamMaps` keeps every stream and converts
+    subtitles per container.
   - `atempo` chains filters to stay within 0.5…2.
 - **Output** (`Support/Output.swift`):
   - `file(beside:name:suffix:ext:)` writes next to the input, e.g. `photo (compressed).jpg`, and never
@@ -268,6 +280,11 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
     pruned when the set grows past 256, and the set is cleared when the last batch ends.
   - `produce(url)` deletes a half-written output if the body throws, and `filling(folder)` does the same for
     output folders.
+- **BackgroundRemover** (`BackgroundRemover.swift`): `VNGenerateForegroundInstanceMaskRequest` (macOS 14) gives a
+  soft mask of every foreground instance at the image's size. It's turned into an 8-bit gray image and applied with
+  `CGContext.clip(to:mask:)` rather than taking Vision's ready-made masked buffer, so the original color space
+  survives. The same pass finds the subject's bounding box (mask > 12/255) for "crop to subject". No observation,
+  no instances or an empty mask all become "No subject found"; other Vision errors are wrapped in a plain message.
   - Staging: `BatchRunner` runs every unit inside `Output.atomically`, which sets a task-local `Output.Scope`.
     While one is set, `file(beside:)`, `file(in:base:ext:)`, `file(in:sameNameAs:)` and `folder(beside:)` reserve
     the final name but return a hidden temporary in the same folder (same volume, so the rename is atomic):
@@ -400,6 +417,7 @@ static array until `willClose`.
   Contents/Resources/AppIcon.icns, THIRD_PARTY_NOTICES.md
   Contents/Resources/bin/                (everything in vendor/bin: ffmpeg, ffprobe, cwebp, img2webp)
   Contents/Frameworks/Sparkle.framework  (ditto'd from the SwiftPM bin dir; rpath @executable_path/../Frameworks)
+  Contents/Resources/Metadata.appintents (App Intents metadata for Shortcuts, see below)
   ```
   `UNIVERSAL=1` builds arm64 + x86_64, and `NO_SIGN=1` skips the ad-hoc `codesign --deep`.
   `scripts/fetch-tools.sh` (`make tools`) puts pinned, verified tool builds into `vendor/bin`.
@@ -420,6 +438,25 @@ static array until `willClose`.
 
   Otherwise "Check for Updates…" shows an alert explaining why. `Updater` is created lazily from
   `AppDelegate`, and CLI commands exit before the app starts, so the CLI never touches Sparkle.
+- **Shortcuts (App Intents):** Xcode runs `appintentsmetadataprocessor` after compiling to write
+  `Metadata.appintents` (`extract.actionsdata`), which is how Shortcuts learns an app's intents without running it.
+  SwiftPM doesn't, so `bundle.sh` does it by hand:
+  1. It builds with `-emit-const-values` and `-const-gather-protocols-file` (Xcode's protocol list, written to
+     `.build/appintents-protocols.json`), so the compiler records the intents' compile-time values: one
+     `Clementine.swiftconstvalues` for release (whole-module) builds, one `<File>.swift.swiftconstvalues` per source
+     in debug builds (leftovers from deleted sources are skipped).
+  2. It runs `xcrun appintentsmetadataprocessor` with the source list, those files and the app binary, writing into
+     `Contents/Resources` before signing.
+  3. It fails the bundle if `extract.actionsdata` doesn't list `ConvertWithClementineIntent`.
+
+  This needs a full Xcode (CI has one). The extra flags make `bundle.sh`'s build differ from a plain
+  `swift build`, so the Clementine module recompiles when you alternate between them. The intents set
+  `openAppWhenRun = false`: the system launches Clementine in the background if needed and `perform()` runs
+  in-process, through `ShortcutRunner` and `BatchRunner` like the CLI. Inputs without a file URL are written to a
+  temporary folder first, text results come back as `.txt` files, and errors are rethrown as `ShortcutError` so
+  Shortcuts shows the plain message. `ClementineActionQuery` reads the intent's files through
+  `@IntentParameterDependency` to suggest only actions that fit them. Note that the app's own `Parameter` type
+  shadows App Intents' `Parameter` alias, so intents use `@IntentParameter`.
 - **Gentle update reminders** (`UpdateReminder` in `App/Updater.swift`, the controller's user-driver delegate):
   as a menu bar (`LSUIElement`) app, a scheduled check's alert would otherwise open behind the front app.
   `standardUserDriverShouldHandleShowingScheduledUpdate` lets Sparkle show it only when it proposes immediate
@@ -497,5 +534,7 @@ static array until `willClose`.
 - `make ui-test` runs `.build/debug/Clementine --ui-test [filter…]`, which needs a logged-in GUI session. Tag
   controls with `.uiTestID("…")` (debug-only frame registry in `Support/UITestID.swift`) and add suites to
   `UITest.all`.
+- `--shortcut-run <action-id> [--set key=value]… file…` (debug) runs `ShortcutRunner`, the code behind the
+  Shortcuts actions, and prints what the intent would return.
 - `--render-wheel out.png [--tools] [--hover N] [--light] [--click [--chip]] file…`, `--render-ui <dir>`
   (debug) and `--demo-wheel` (live wheel, app mode) are visual dev aids.

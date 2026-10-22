@@ -62,6 +62,10 @@ enum UIPreview {
             let form = ParameterForm(action: edit, urls: urls, values: values, onApply: { _ in }, onCancel: {})
             snapshotWindow(NSHostingController(rootView: form), appearance: appearance, settle: 1.5, to: out("parameters-preview"))
         }
+        if let cutOut = ActionRegistry.find("tool.image.removebg"), let image {
+            let form = ParameterForm(action: cutOut, urls: [image], values: cutOut.defaults, onApply: { _ in }, onCancel: {})
+            snapshotWindow(NSHostingController(rootView: form), appearance: appearance, settle: 2, to: out("parameters-cutout"))
+        }
         if let fit = ActionRegistry.find("tool.fit") {
             let form = ParameterForm(action: fit, urls: [URL(fileURLWithPath: "/tmp/clip.mov")], values: fit.defaults,
                                      onApply: { _ in }, onCancel: {})

@@ -55,11 +55,12 @@ enum CLI {
 
     private static let usage = """
         usage: Clementine --list <file>...
-               Clementine --run <action-id> [--set key=value]... [--record] <file>...
+               Clementine --run <action-id> [--set key=value]... [--record] [--software] <file>...
                Clementine --history | --undo | --clear-history
 
         --list shows each wheel as it would appear (most used first, hidden slices marked).
         --run processes several files in parallel, like the app. --record also logs usage and history.
+        --software encodes video with x264/x265 even when hardware encoding is on.
         --undo moves the newest history entry's outputs to the Trash.
         """
 
@@ -94,6 +95,8 @@ enum CLI {
                 let argument = arguments.removeFirst()
                 if argument == "--record" {
                     record = true
+                } else if argument == "--software" {
+                    FFmpeg.Hardware.forceSoftware.withLock { $0 = true }
                 } else if argument == "--set" {
                     guard !arguments.isEmpty else { return usageError("--set needs key=value") }
                     let pair = arguments.removeFirst().split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)

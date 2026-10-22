@@ -94,6 +94,13 @@ echo "Fixtures in $F"
 "$H" text "$F/text.png"
 cp "$F/quad.png" "$F/alpha quad.png"
 q -f lavfi -i testsrc=size=640x480 -frames:v 1 -q:v 2 "$F/photo.jpg"
+# Cut Out Subject: an orange ball (on an olive square) over a blue backdrop, which Vision lifts as a subject; and
+# an evenly gray frame with nothing to lift.
+q -f lavfi -i "color=c=0x3a6ea5:s=640x480,format=rgb24" -frames:v 1 \
+  -vf "drawbox=x=220:y=140:w=200:h=200:color=0xffb000:t=fill,geq=r='if(lt(hypot(X-320\,Y-240)\,110)\,255\,r(X\,Y)*0.3+40)':g='if(lt(hypot(X-320\,Y-240)\,110)\,140\,g(X\,Y)*0.3+60)':b='if(lt(hypot(X-320\,Y-240)\,110)\,20\,b(X\,Y)*0.3+90)'" \
+  "$F/ball.png"
+q -i "$F/ball.png" -q:v 2 "$F/ball.jpg"
+q -f lavfi -i "color=c=gray:s=640x480" -frames:v 1 "$F/plain.png"
 q -f lavfi -i testsrc=size=200x150:rate=10 -t 1 "$F/anim.gif"
 # JPEG with EXIF orientation 6: stored 400×200, shown upright as 200×400.
 cat > "$WORK/exif.swift" <<'SWIFT'
@@ -195,11 +202,70 @@ expect_error "arrow with one point" "at least 2 points" -- tool.image.annotate -
 expect_error "bad color" "#RRGGBB" -- tool.image.annotate --set 'shapes=[{"kind":"pen","points":[[1,1]],"color":"orange"}]' "$F/quad.png"
 expect_error "empty text" "needs some text" -- tool.image.annotate --set 'shapes=[{"kind":"text","points":[[1,1]],"text":""}]' "$F/quad.png"
 
+echo "Cut Out Subject"
+alpha() { pix "$@" | cut -d" " -f4; }
+# Vision's subject model may be unavailable on CI's virtual Macs (no Neural Engine/GPU); skip there, never locally.
+if probe="$("$BIN" --run tool.image.removebg "$F/ball.png" 2>&1)"; then vision=1; else vision=""; fi
+if [[ -z "$vision" && -n "${GITHUB_ACTIONS:-}${CI:-}" ]]; then
+  echo "  SKIP Vision subject lifting is unavailable on this machine: $probe"
+else
+  [[ -n "$vision" ]] || bad "subject lifting runs" "$probe"
+  expect "PNG: same size, background clear, subject kept" \
+    '[[ "$OUT" == *"ball (cut out)"*.png && "$(dims "$OUT")" == "640 480" && "$(alpha "$OUT" 5 5)" == 0 && "$(alpha "$OUT" 630 470)" == 0 && "$(pix "$OUT" 320 240)" == "255 140 20 255" ]]' \
+    -- tool.image.removebg "$F/ball.png"
+  expect "crop to subject hugs it" \
+    'read -r w h <<<"$(dims "$OUT")"; between "$w" 200 240 && between "$h" 200 240 && [[ "$(alpha "$OUT" $((w / 2)) $((h / 2)))" == 255 ]]' \
+    -- tool.image.removebg --set crop=On "$F/ball.png"
+  expect "HEIC keeps transparency" \
+    '[[ "$OUT" == *.heic && "$(alpha "$OUT" 5 5)" == 0 && "$(alpha "$OUT" 320 240)" -ge 250 ]]' \
+    -- tool.image.removebg --set format=HEIC "$F/ball.jpg"
+  expect "WebP keeps transparency" \
+    '[[ "$OUT" == *.webp && "$(alpha "$OUT" 5 5)" == 0 && "$(alpha "$OUT" 320 240)" -ge 250 ]]' \
+    -- tool.image.removebg --set format=webp "$F/ball.png"
+fi
+expect_error "nothing to lift" "No subject found in plain.png" -- tool.image.removebg "$F/plain.png"
+expect_error "bad format" "not a valid choice" -- tool.image.removebg --set format=jpg "$F/ball.png"
+if "$BIN" --list "$F/ball.png" | grep -q "^  tool.image.removebg  *Cut Out Subject$"; then
+  ok "offered on the Tools wheel for images"
+else bad "offered on the Tools wheel" "$("$BIN" --list "$F/ball.png")"; fi
+
+echo "Shortcuts (the runner behind the App Intents)"
+# shortcut <name> <assertion> -- <action-id> [--set k=v]… <files…>, like expect but through ShortcutRunner.
+shortcut() {
+  local name="$1"; shift
+  local check=(); while [[ "$1" != "--" ]]; do check+=("$1"); shift; done; shift
+  local out
+  if ! out="$("$BIN" --shortcut-run "$@" 2>&1)"; then bad "$name" "$out"; return; fi
+  OUT="$out"
+  if eval "${check[*]}"; then ok "$name"; else bad "$name" "assertion failed: ${check[*]} (output: $OUT)"; fi
+}
+shortcut_error() {
+  local name="$1" needle="$2"; shift 3
+  local out
+  if out="$("$BIN" --shortcut-run "$@" 2>&1)"; then bad "$name" "succeeded but should fail: $out"; return; fi
+  if [[ "$out" == *"$needle"* ]]; then ok "$name"; else bad "$name" "unexpected message: $out"; fi
+}
+shortcut "converts a batch, outputs in input order" \
+  '[[ "$(wc -l <<<"$OUT" | tr -d " ")" == 2 && "$(sed -n 1p <<<"$OUT")" == *"/quad.jpg" && "$(sed -n 2p <<<"$OUT")" == *"/stripes.jpg" ]]' \
+  -- convert.image.jpeg "$F/quad.png" "$F/stripes.png"
+shortcut "settings are key=value lines" '[[ "$(dims "$OUT")" == "100 50" ]]' -- tool.image.resize --set "size=50%" "$F/quad.png"
+shortcut "text results come back" '[[ "$OUT" == "== quad.png =="* ]]' -- tool.image.qr "$F/quad.png"
+if [[ -n "$vision" ]]; then
+  shortcut "Remove Background's settings" '[[ "$OUT" == *.webp ]]' -- tool.image.removebg --set format=webp --set crop=On "$F/ball.png"
+fi
+shortcut_error "unknown setting" 'has no setting "level"' -- tool.image.resize --set level=1 "$F/quad.png"
+shortcut_error "bad value" "not a valid choice" -- tool.image.resize --set size=huge "$F/quad.png"
+shortcut_error "action that doesn't fit the file" "Convert to PDF doesn't work on quad.png" -- convert.document.pdf "$F/quad.png"
+shortcut_error "too few files" "needs at least 2 files" -- tool.image.collage "$F/quad.png"
+shortcut_error "one-file editor" "one file at a time" -- tool.image.redact "$F/quad.png" "$F/stripes.png"
+shortcut_error "unknown action" 'no action "nope"' -- nope "$F/quad.png"
+
 echo "Wheel"
 LIST="$(list "$F/photo.jpg")"
-if [[ $(grep -c '^  tool' <<<"$LIST") -eq 12 ]] && grep -q tool.image.redact <<<"$LIST" && grep -q tool.image.annotate <<<"$LIST" \
-   && grep -q tool.metadata.strip <<<"$LIST"; then ok "one image: 12 tools incl. Redact, Annotate, Remove Metadata"
-else bad "one image: 12 tools" "$LIST"; fi
+if [[ $(grep -c '^  tool' <<<"$LIST") -eq 13 ]] && grep -q tool.image.redact <<<"$LIST" && grep -q tool.image.annotate <<<"$LIST" \
+   && grep -q tool.metadata.strip <<<"$LIST" && grep -q tool.image.removebg <<<"$LIST"; then
+  ok "one image: 13 tools incl. Redact, Annotate, Cut Out Subject, Remove Metadata"
+else bad "one image: 13 tools" "$LIST"; fi
 LIST="$(list "$F/photo.jpg" "$F/quad.png")"
 if ! grep -qE 'tool.image.(redact|annotate)' <<<"$LIST" && grep -q tool.image.crop <<<"$LIST" && grep -q tool.image.collage <<<"$LIST" \
    && grep -q tool.image.pdf <<<"$LIST" && grep -q tool.metadata.strip <<<"$LIST"; then ok "two images: Crop, Collage, Make PDF, Remove Metadata, no single-image editors"
