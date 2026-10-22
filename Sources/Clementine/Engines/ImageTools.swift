@@ -21,6 +21,8 @@ enum ImageTools {
             format = image.hasAlpha ? .heic : .jpeg
         }
         let output = Output.file(beside: input, suffix: "compressed", ext: format.ext)
+        // Deliberately keeps all metadata, GPS included: Compress is about size, and people expect a smaller copy of
+        // the same photo (date, location, camera) in their library. Stripping is Remove Metadata's job, and Redact's.
         try await ImageEngine.write(image, to: output, format: format, quality: [0.82, 0.68, 0.5][level], properties: loaded.properties)
         return output
     }

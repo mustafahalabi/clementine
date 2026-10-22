@@ -3,8 +3,8 @@ import Foundation
 /// SRT ⇄ WebVTT.
 enum SubtitleEngine {
     static func convert(_ input: URL, to ext: String) throws -> URL {
-        let data = try Data(contentsOf: input)
-        var text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
+        // UTF-16 subtitles (common from Windows tools) decode as garbage if read as UTF-8/Latin-1.
+        var text = TextDecoding.decode(try Data(contentsOf: input))
         text = text.replacingOccurrences(of: "\u{FEFF}", with: "")
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")

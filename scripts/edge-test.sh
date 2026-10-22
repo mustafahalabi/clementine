@@ -38,7 +38,8 @@ let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: CommandLine.argu
 let props: [CFString: Any] = [kCGImagePropertyOrientation: 6,
   kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 48.85, kCGImagePropertyGPSLatitudeRef: "N",
                                   kCGImagePropertyGPSLongitude: 2.35, kCGImagePropertyGPSLongitudeRef: "E"],
-  kCGImagePropertyExifDictionary: [kCGImagePropertyExifLensModel: "TestLens"]]
+  kCGImagePropertyExifDictionary: [kCGImagePropertyExifLensModel: "TestLens", kCGImagePropertyExifUserComment: "SecretNote",
+                                   kCGImagePropertyExifBodySerialNumber: "SN12345"]]
 CGImageDestinationAddImage(dest, img, props as CFDictionary); CGImageDestinationFinalize(dest)
 SWIFT
 q -f lavfi -i testsrc=size=400x200 -frames:v 1 "$WORK/wide.png"
@@ -74,6 +75,67 @@ q -f lavfi -i testsrc=size=320x240:rate=30 -f lavfi -i sine=r=48000 -t 3 -c:v li
 echo "not really a video" > "$F/broken.mp4"
 echo "not an image" > "$F/broken.jpg"
 : > "$F/empty.txt"
+# Text in the encodings Windows tools save: UTF-16 with a BOM (LE and BE), UTF-16 without one, Windows-1252.
+utf16() { printf "$1" > "$3"; printf '%s' "$2" | iconv -f utf-8 -t "$4" >> "$3"; }
+utf16 '\xff\xfe' $'Grüße 你好 “q” €\n' "$F/utf16le.txt" utf-16le
+utf16 '\xfe\xff' $'Grüße 你好 “q” €\n' "$F/utf16be.txt" utf-16be
+printf 'caf\xe9 \x93q\x94 \x80\n' > "$F/cp1252.txt"
+CUE=$'1\r\n00:00:01,000 --> 00:00:02,000\r\nHéllo 你好\r\n'
+utf16 '\xff\xfe' "$CUE" "$F/utf16le.srt" utf-16le
+utf16 '\xfe\xff' "$CUE" "$F/utf16be.srt" utf-16be
+utf16 '' "$CUE" "$F/utf16nobom.srt" utf-16le
+printf '1\r\n00:00:01,000 --> 00:00:02,000\r\ncaf\xe9 \x93q\x94 \x80\r\n' > "$F/cp1252.srt"
+mkdir -p "$F/readonly" && cp "$F/long.txt" "$F/readonly/locked.txt" && chmod 555 "$F/readonly"
+
+# HTML that references a server in every way a page can load something. A local listener logs any request;
+# converting must make none. `privacy.html` points at it, `deadhost.html` at an unroutable address.
+cat > "$WORK/listener.py" <<'PY'
+import http.server, sys
+class Log(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        with open(sys.argv[1], "a") as f: f.write(self.path + "\n")
+        self.send_response(200); self.end_headers(); self.wfile.write(b"x")
+    def log_message(self, *args): pass
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Log)
+with open(sys.argv[2], "w") as f: f.write(str(server.server_address[1]))
+server.serve_forever()
+PY
+: > "$WORK/requests.log"
+python3 -I "$WORK/listener.py" "$WORK/requests.log" "$WORK/port" & LISTENER=$!
+trap 'kill $LISTENER 2>/dev/null; chmod -R u+w "$F/readonly" 2>/dev/null' EXIT
+for _ in $(seq 50); do [[ -s "$WORK/port" ]] && break; sleep 0.1; done
+remote_html() {
+  local H="$1"
+  cat <<HTML
+<!DOCTYPE html><html><head><base href="$H/base/">
+<meta http-equiv="refresh" content="0; url=$H/refresh">
+<link rel="stylesheet" href="$H/link.css"><link rel=icon href=$H/icon><link rel=preload as=image href="$H/preload.png">
+<style>@import url($H/import.css); @import "$H/import2.css"; body { background: url('$H/bg.png') }
+p { background-image: u\72l($H/escaped.png) } @font-face { font-family: X; src: url($H/font.woff) }</style>
+</head><body background="$H/bodybg">
+<p style="background:url($H/inline.png)">Offline page text</p>
+<img src="$H/pixel.gif"><img src=$H/unquoted.gif><img src="&#104;ttp://${H#http://}/entity.gif"><img src=" $H/space.gif">
+<img srcset="$H/srcset1.png 1x, $H/srcset2.png 2x"><img src="//${H#http://}/protocol-relative.gif">
+<picture><source srcset="$H/source.png"><img src="cover.png"></picture>
+<iframe src="$H/iframe.html"></iframe><iframe srcdoc="<img src=$H/srcdoc.gif>"></iframe>
+<object data="$H/object.swf"></object><embed src="$H/embed"><frameset><frame src="$H/frame.html"></frameset>
+<video poster="$H/poster.png" src="$H/video.mp4"><source src="$H/video-source.mp4"></video><audio src="$H/audio.mp3"></audio>
+<svg><image href="$H/svg-image.png"/><image xlink:href="$H/svg-xlink.png"/><rect fill="url($H/svg-fill#g)"/></svg>
+<!-- a comment with a ' quote --><img src="$H/after-comment.gif">
+<noscript><img src="$H/noscript.gif"></noscript><script>new Image().src = "$H/script.gif"</script>
+<table background="$H/table-bg"><tr><td>cell</td></tr></table><input type=image src="$H/input.png">
+<a href="$H/link">a link</a>
+</body></html>
+HTML
+}
+remote_html "http://127.0.0.1:$(cat "$WORK/port")" > "$F/privacy.html"
+remote_html "http://10.255.255.1" > "$F/deadhost.html"
+cat > "$WORK/pdfsize.swift" <<'SWIFT'
+import AppKit; import PDFKit
+let page = PDFDocument(url: URL(fileURLWithPath: CommandLine.arguments[1]))!.page(at: 0)!.bounds(for: .mediaBox).size
+let paper = NSPrintInfo.shared.paperSize
+print(abs(page.width - paper.width) < 1 && abs(page.height - paper.height) < 1 ? "ok \(page)" : "page \(page) vs paper \(paper)")
+SWIFT
 # Names that look like tar/zip options; archived members must stay plain paths. "PWNED" appearing anywhere means
 # a name was run as an option.
 mkdir -p "$F/dash" "$F/repack"
@@ -162,6 +224,9 @@ expect "speed 0.25x" 'near "$(dur "$OUT")" 16.0 0.5' -- tool.media.speed --set s
 echo "Images"
 expect "EXIF-rotated jpg → png upright" '[[ "$(dims "$OUT")" == "200 400" ]]' -- convert.image.png "$F/oriented.jpg"
 expect "EXIF-rotated compress upright & no double-rotate" '[[ "$(dims "$OUT")" == "200 400" && "$(sips -g orientation "$OUT" | awk "/orientation/{print \$2}")" != "6" ]]' -- tool.compress "$F/oriented.jpg"
+expect "redact drops GPS, serial and comment" '"$BIN" --run tool.metadata "$OUT" > "$WORK/redact-meta.txt" && ! grep -qiE "GPS|Latitude|SN12345|SecretNote" "$WORK/redact-meta.txt" && grep -q TestLens "$WORK/redact-meta.txt" && [[ "$(dims "$OUT")" == "200 400" ]]' -- tool.image.redact --set 'boxes=[{"x":0,"y":0,"w":20,"h":20}]' "$F/oriented.jpg"
+expect "redact output has no GPS bytes" '! strings "$OUT" | grep -qE "SN12345|SecretNote" && [[ "$(sips -g all "$OUT" | grep -ci gps)" == 0 ]]' -- tool.image.redact --set 'boxes=[{"x":0,"y":0,"w":20,"h":20}]' --set style=black "$F/oriented.jpg"
+expect "compress keeps GPS on purpose" '"$BIN" --run tool.metadata "$OUT" | grep -q "Latitude: 48.85"' -- tool.compress "$F/oriented.jpg"
 expect "strip removes GPS + lens" '! "$BIN" --run tool.metadata "$OUT" | grep -qiE "GPS|TestLens"' -- tool.metadata.strip "$F/oriented.jpg"
 expect "crop on rotated image is square" '[[ "$(dims "$OUT")" == "200 200" ]]' -- tool.image.crop "$F/oriented.jpg"
 expect "grayscale → heic" '[[ -f "$OUT" ]]' -- convert.image.heic "$F/gray.jpg"
@@ -189,6 +254,35 @@ expect "doc → txt" 'grep -q "Bold text" "$OUT"' -- convert.document.txt "$F/le
 expect "md → pdf" '[[ -f "$OUT" ]]' -- convert.document.pdf "$F/readme.md"
 expect "latin1 txt → docx → txt keeps accents" '[[ -f "$OUT" ]] && "$BIN" --run convert.document.txt "$OUT" | xargs -I{} grep -q "café" "{}"' -- convert.document.docx "$F/latin1.txt"
 expect "empty txt → pdf" '[[ -f "$OUT" ]]' -- convert.document.pdf "$F/empty.txt"
+expect "txt → pdf uses the system paper size" '[[ "$(swift "$WORK/pdfsize.swift" "$OUT")" == ok* ]]' -- convert.document.pdf "$F/readme.md"
+roundtrip() { cat "$("$BIN" --run convert.document.txt "$1")"; }
+expect "utf-16le txt (BOM) → rtf keeps text" '[[ "$(roundtrip "$OUT")" == "Grüße 你好 “q” €" ]]' -- convert.document.rtf "$F/utf16le.txt"
+expect "utf-16be txt (BOM) → rtf keeps text" '[[ "$(roundtrip "$OUT")" == "Grüße 你好 “q” €" ]]' -- convert.document.rtf "$F/utf16be.txt"
+expect "windows-1252 txt → rtf keeps text" '[[ "$(roundtrip "$OUT")" == "café “q” €" ]]' -- convert.document.rtf "$F/cp1252.txt"
+
+# Read-only folder: must fail fast with a message (the print panel used to hang on a modal alert), leaving nothing.
+started=$(python3 -c 'import time; print(time.time())')
+if out="$("$BIN" --run convert.document.pdf "$F/readonly/locked.txt" 2>&1)"; then
+  bad "pdf into read-only folder fails" "succeeded: $out"
+elif ! awk -v a="$started" -v b="$(python3 -c 'import time; print(time.time())')" 'BEGIN{exit !(b-a < 5)}'; then
+  bad "pdf into read-only folder fails" "took longer than 5 s"
+elif [[ "$(ls -A "$F/readonly")" != "locked.txt" || "$out" != *"isn't writable"* ]]; then
+  bad "pdf into read-only folder fails" "left files or unclear message: $(ls -A "$F/readonly") / $out"
+else
+  ok "pdf into read-only folder fails fast and leaves nothing"
+fi
+
+# Privacy: HTML import must never touch the network.
+for target in pdf txt docx rtf; do
+  expect "html → $target makes no network requests" '[[ ! -s "$WORK/requests.log" ]]' -- convert.document.$target "$F/privacy.html"
+done
+expect "html → txt keeps the text" 'grep -q "Offline page text" "$OUT" && grep -q "a link" "$OUT"' -- convert.document.txt "$F/privacy.html"
+expect "html → pdf keeps local images" '[[ $(grep -ac "/Subtype /Image" "$OUT") -ge 1 ]]' -- convert.document.pdf "$F/privacy.html"
+[[ -s "$WORK/requests.log" ]] && echo "    requests made: $(tr '\n' ' ' < "$WORK/requests.log")"
+for target in pdf txt; do
+  started=$(python3 -c 'import time; print(time.time())')
+  expect "html with unreachable host → $target is quick" 'awk -v a="$started" -v b="$(python3 -c "import time; print(time.time())")" "BEGIN{exit !(b-a < 5)}"' -- convert.document.$target "$F/deadhost.html"
+done
 expect "multi-page pdf → png folder" '[[ -d "$OUT" && $(ls "$OUT" | wc -l) -gt 1 ]]' -- convert.pdf.png "$F/long.pdf"
 expect "pages 3-1 reversed" '[[ "$("$BIN" --run tool.metadata "$OUT" | sed -n 2p)" == "Pages: 3" ]]' -- tool.pdf.pages --set pages=3-1 "$F/long.pdf"
 expect "pages open-ended 2-" '[[ -f "$OUT" ]]' -- tool.pdf.pages --set pages=2- "$F/long.pdf"
@@ -203,6 +297,10 @@ expect "image pdf → txt says scan" '[[ 1 ]]' -- convert.pdf.jpeg "$F/long.pdf"
 echo "Subtitles"
 expect "vtt with header/NOTE/settings/voice → srt" 'grep -q "^Hi there$" "$OUT" && grep -q "00:01:03,250 --> 00:01:04,000" "$OUT" && grep -q "00:00:01,000 --> 00:00:02,500$" "$OUT" && ! grep -q NOTE "$OUT"' -- convert.subtitle.srt "$F/cues.vtt"
 expect "crlf srt → vtt" '! grep -q $'"'"'\r'"'"' "$OUT" && grep -q "00:00:01.000" "$OUT"' -- convert.subtitle.vtt "$F/crlf.srt"
+expect "utf-16le srt (BOM) → vtt" 'grep -q "00:00:01.000 --> 00:00:02.000" "$OUT" && grep -q "Héllo 你好" "$OUT"' -- convert.subtitle.vtt "$F/utf16le.srt"
+expect "utf-16be srt (BOM) → vtt" 'grep -q "00:00:01.000 --> 00:00:02.000" "$OUT" && grep -q "Héllo 你好" "$OUT"' -- convert.subtitle.vtt "$F/utf16be.srt"
+expect "utf-16le srt (no BOM) → vtt" 'grep -q "Héllo 你好" "$OUT"' -- convert.subtitle.vtt "$F/utf16nobom.srt"
+expect "windows-1252 srt → vtt" 'grep -q "café “q” €" "$OUT"' -- convert.subtitle.vtt "$F/cp1252.srt"
 
 echo "Archives"
 expect "single-file zip extracts the file, not a folder" '[[ -f "$OUT" && "$(basename "$OUT")" == solo*.txt ]]' -- convert.archive.extract "$F/single.zip"
