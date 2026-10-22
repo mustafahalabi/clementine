@@ -244,9 +244,9 @@ The **Annotate**, **Bleep** and **Pages** editors are shown in the sections abov
   <img src="docs/images/click-mode-light.png" alt="The click-mode wheel with its Convert / Tools chip">
 </picture>
 
-**No drag needed.** Right-click files in Finder › Services › **Convert with Clementine** or **Clementine Tools**,
-or choose **Open Files…** in the menu bar. The wheel opens in click mode: hover and click a slice, press
-<kbd>Tab</kbd> (or click the chip) to switch wheels, use the arrow keys and <kbd>Return</kbd>, and close it with
+**No drag needed.** Right-click files in Finder › Services › **Convert with Clementine**, **Clementine Tools** or
+**Clementine File Actions**, or choose **Open Files…** in the menu bar. The wheel opens in click mode: hover and click a slice, press
+<kbd>Tab</kbd> (or click the chip) to step through the three wheels, use the arrow keys and <kbd>Return</kbd>, and close it with
 <kbd>Esc</kbd> or a click outside.
 
 </td>
@@ -281,6 +281,16 @@ stays in check), or once on all of them for Join, Merge, Collage and Make PDF. E
 
 **Switch mid-drag.** Press or release <kbd>⌥</kbd> while the wheel is open to flip between the convert and tools
 wheels.
+
+**File actions on <kbd>⌃</kbd>.** Start a drag and hold Control (alone) for a third wheel that works on the file
+itself: **Copy Path**, **Copy Name**, **SHA-256**, **Data URI** (files up to 5 MB), **Open in Terminal** (the
+enclosing folder), **Reveal in Finder** and **AirDrop**. Copied values land on the clipboard and show on the job
+card. Nothing is written next to your file. ⌃ has to be held for a quarter of a second, so ⌃←/⌃→ to carry a file to
+another Space doesn't pop the wheel, and Settings can switch it off.
+
+**Presets.** In any tool's settings sheet, **Save as Preset…** keeps those settings as a slice of its own (say
+"Under 10 MB" next to Target Size) that runs without asking. Rename, reorder, hide or delete presets in
+Settings › Wheel. They live in `presets.json` in Clementine's Application Support folder.
 
 **A command line, too.** Every action on the wheel also runs from Terminal with the same engine, so you can script
 it. See [For developers](#for-developers).
@@ -324,8 +334,8 @@ The action ids and settings for **Convert with Clementine** are the ones in [doc
 <details>
 <summary><b>Good to know</b></summary>
 
-- **Keep it in `/Applications`.** The right-click **Services** entries (Convert with Clementine, Clementine Tools)
-  appear once the app lives there.
+- **Keep it in `/Applications`.** The right-click **Services** entries (Convert with Clementine, Clementine Tools,
+  Clementine File Actions) appear once the app lives there.
 - **No setup, no extra downloads.** ffmpeg and the WebP tools are built in.
 - **No special permissions.** Clementine notices drags by watching for mouse-downs and the system drag pasteboard,
   which doesn't need Accessibility access.
@@ -385,7 +395,8 @@ notarized by Apple.
 <details>
 <summary><b>The wheel doesn't appear when I drag.</b></summary>
 <br>
-Start the drag first, then press <kbd>⇧</kbd> (or <kbd>⌥</kbd><kbd>⇧</kbd>). Check that "Show the wheel while
+Start the drag first, then press <kbd>⇧</kbd> (or <kbd>⌥</kbd><kbd>⇧</kbd>, or <kbd>⌃</kbd>). Holding ⌃ before
+you click doesn't work: ⌃-click opens Finder's context menu instead of starting a drag. Check that "Show the wheel while
 dragging" is on in Settings and that Clementine is running (look for it in the menu bar).
 </details>
 
@@ -406,6 +417,8 @@ dragging" is on in Settings and that Clementine is running (look for it in the m
 - **Cut Out Subject** uses the same model as Photos' "Copy Subject": it finds people, pets and distinct objects, not
   arbitrary regions, and keeps every subject it finds. Without a clear subject it says so instead of guessing.
 - **Open Files…** shows the standard open panel while another app is still active; click into it before typing.
+- **Open in Terminal** always uses Terminal.app; macOS has no common way to ask for another terminal.
+- **Presets** count toward the wheel's 13 slices; hide slices you don't use in Settings › Wheel to make room.
 
 ## Contributing
 
@@ -460,6 +473,9 @@ $BIN --list photo.heic                                   # the wheels for this f
 $BIN --run convert.image.webp photo.heic                 # run one action
 $BIN --run tool.fit --set megabytes=2 clip.mov           # with parameters
 $BIN --run tool.image.crop --set 'crop={"x":0,"y":0,"w":800,"h":600}' photo.jpg   # editors take JSON
+$BIN --run file.sha256 clip.mov                          # file actions print their result
+$BIN --save-preset "Under 10 MB" --action tool.fit --set megabytes=10
+$BIN --preset "Under 10 MB" clip.mov                     # run a preset by name
 ```
 
 [docs/CLI.md](docs/CLI.md) has every flag, every action id with its parameters, and the debug-only modes
@@ -472,7 +488,7 @@ Sources/Clementine/
   App/          entry point, menu bar, settings, CLI, Shortcuts actions (App Intents), welcome tour, Sparkle updater
   Drag/         DragMonitor (spots file drags + modifier keys), WheelController (glue)
   Wheel/        WheelPanel (floating drop target), WheelView (SwiftUI), WheelModel (geometry, hit-testing)
-  Actions/      Action model + registry; ConvertActions and ToolActions are the catalog
+  Actions/      Action model + registry; ConvertActions, ToolActions and FileActions are the catalog; Presets
   Engines/      ImageEngine/ImageTools (ImageIO, Core Image, Vision), PDFEngine (PDFKit),
                 DocumentEngine (AppKit text system), MediaEngine/FFmpeg, ArchiveEngine, SubtitleEngine
   Jobs/         JobRunner, BatchRunner (parallel units), History, progress / parameter / result windows
@@ -481,7 +497,7 @@ Sources/Clementine/
 ```
 
 A global mouse-down monitor starts a 30 Hz poll of the drag pasteboard while the button is held; when it holds file
-URLs and ⇧ is down, the wheel (a borderless, non-activating `NSPanel` registered as a drop target) opens under the
+URLs and ⇧ (or ⌃) is down, the wheel (a borderless, non-activating `NSPanel` registered as a drop target) opens under the
 pointer. Adding an action means adding an `Action` to `ConvertActions` or `ToolActions` with an `accepts`
 predicate, optional `parameters` (they get a settings sheet automatically) and a `run` closure.
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the rest.

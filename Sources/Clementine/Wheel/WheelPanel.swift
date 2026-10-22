@@ -41,7 +41,7 @@ final class WheelPanel {
         catcher.onDismiss = { [weak self] in self?.hide() }
         catcher.onToggleMode = { [weak self] in
             guard let self else { return }
-            self.setMode(self.model.mode == .convert ? .tools : .convert)
+            self.setMode(self.model.mode.next)
         }
     }
 
@@ -54,8 +54,8 @@ final class WheelPanel {
     /// Click mode: hover to highlight, click a slice to run it.
     func showClickable(urls: [URL], mode: WheelMode, at point: NSPoint) {
         present(urls: urls, mode: mode, at: point)
-        guard !model.actions.isEmpty || !ActionRegistry.actions(for: urls, mode: mode == .convert ? .tools : .convert).isEmpty else {
-            // Nothing to offer either way: show the notice briefly instead of waiting for a click.
+        guard !model.actions.isEmpty || [mode.next, mode.next.next].contains(where: { !ActionRegistry.actions(for: urls, mode: $0).isEmpty }) else {
+            // Nothing to offer on any wheel: show the notice briefly instead of waiting for a click.
             let current = generation
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { self.hide(generation: current) }
             return
@@ -214,7 +214,7 @@ private final class DropCatcher: NSView {
     override func accessibilityRole() -> NSAccessibility.Role? { .group }
 
     override func accessibilityLabel() -> String? {
-        let wheel = model.mode == .convert ? "Convert wheel" : "Tools wheel"
+        let wheel = "\(model.mode.title) wheel"
         let count = model.actions.count
         let choices = count == 1 ? "1 choice" : "\(count) choices"
         return model.summary.isEmpty ? "\(wheel), \(choices)" : "\(wheel) for \(model.summary), \(choices)"
@@ -227,7 +227,7 @@ private final class DropCatcher: NSView {
 
     override func accessibilityHelp() -> String? {
         clickMode
-            ? "Arrow keys choose a slice, Return runs it, Tab switches wheels, Escape closes."
+            ? "Arrow keys choose a slice, Return runs it, Tab switches to the \(model.mode.next.title.lowercased()) wheel, Escape closes."
             : "Drop the file on a slice to run it, or on the middle to cancel."
     }
 

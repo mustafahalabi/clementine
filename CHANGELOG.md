@@ -41,6 +41,23 @@
   - Compress never hands back a bigger file: if the result isn't smaller, it's deleted and the original kept. The
     card says "Already as small as it gets — kept the original."; the CLI prints `kept: <file>: …` on stderr and
     exits 0.
+- **Presets and the ⌃ wheel** (`feat/presets-ctrl-wheel`)
+  - Presets: **Save as Preset…** in any tool's settings sheet keeps those settings as a wheel slice of its own
+    (marked with a small bookmark, placed after its tool) that runs without asking. Rename, reorder, hide and
+    delete them in Settings › Wheel › Presets. Stored in `presets.json` in Application Support and checked on load:
+    invalid ones are skipped with a reason. No built-in presets.
+  - A third wheel on **⌃** while dragging: Copy Path, Copy Name, SHA-256, Data URI (up to 5 MB), Open in Terminal,
+    Reveal in Finder and AirDrop. Values go to the clipboard and show on the job card; nothing is written beside
+    the file. ⌃ needs a quarter-second hold so ⌃-arrow Space switching mid-drag doesn't trigger it, and Settings ›
+    General can turn it off. Also in click mode (Tab and the chip now step through three wheels) and as a
+    "Clementine File Actions" Service.
+  - Shortcuts: *Convert with Clementine* also lists presets and the file actions; copied values come back as
+    text, Terminal/Reveal/AirDrop return nothing.
+  - CLI: `--preset <name>`, `--list-presets`, `--save-preset <name> --action <id> [--set k=v]…`,
+    `--rename-preset`, `--delete-preset`; file actions print their value (`--run file.sha256 clip.mov`);
+    `--list` shows the ⌃ wheel; `--render-wheel`/`--demo-wheel --files`.
+  - Tests: new `scripts/test-presets-files.sh` suite (61 checks, also in CI) and three UI suites (`preset sheet`,
+    `preset settings`, `file actions wheel`).
 
 ## 0.1.1 — 2026-10-22
 

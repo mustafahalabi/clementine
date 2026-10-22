@@ -177,6 +177,8 @@ struct JobView: View {
                     .contentTransition(.opacity)
 
                 switch job.state {
+                case .done where job.result != nil:
+                    resultBox(job.result ?? "")
                 case .running, .done:
                     HStack(spacing: 10) {
                         CitrusProgressBar(value: job.progress, tone: tone)
@@ -211,7 +213,7 @@ struct JobView: View {
         let text: String
         switch state {
         case .running: return
-        case .done: text = "\(job.title) done"
+        case .done: text = job.result != nil ? "\(job.title): copied to the clipboard" : "\(job.title) done"
         case .failed(let message):
             text = "\(job.title) failed. \(message.split(separator: "\n").first.map(String.init) ?? "")"
         }
@@ -326,6 +328,25 @@ struct JobView: View {
         }
         .padding(.top, 8)
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    /// A copied value (path, hash), selectable, in a recessed box; long ones are cut to three lines.
+    private func resultBox(_ value: String) -> some View {
+        Text(value)
+            .font(.system(size: 11, design: .monospaced))
+            .lineLimit(3)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Theme.leaf.opacity(scheme == .dark ? 0.14 : 0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.leaf.opacity(0.25), lineWidth: 1).allowsHitTesting(false))
+            .padding(.top, 8)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+            .uiTestID("job.result.\(job.title)")
+            .accessibilityLabel("Copied: \(value)")
     }
 
     private func errorText(_ message: String) -> some View {

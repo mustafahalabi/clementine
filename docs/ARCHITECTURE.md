@@ -11,7 +11,7 @@ app lives only in the menu bar.
 ## 1. Overview
 
 ```
- Finder drag (⇧ / ⌥⇧ held)                Finder › Services          Menu bar › Open Files…
+ Finder drag (⇧ / ⌥⇧ / ⌃ held)           Finder › Services          Menu bar › Open Files…
           │                                       │                           │
           ▼                                       ▼                           ▼
  DragMonitor  ── .began/.modeChanged/.ended ──►  WheelController  ◄── ServiceProvider / NSOpenPanel
@@ -38,7 +38,7 @@ app lives only in the menu bar.
                     Engines: ImageEngine/ImageTools/ImageEdits, PDFEngine, DocumentEngine,
                              MediaEngine → FFmpeg → ProcessRunner → ffmpeg/ffprobe (ToolLocator),
                              ArchiveEngine, SubtitleEngine, MetadataEngine
-                                                       │ JobOutput (.files / .text), written via Output
+                                                       │ JobOutput (.files / .text / .value / .done), written via Output
                                                        ▼
                     Reveal in Finder · ResultWindow (text) · HistoryStore (history.json) · Undo
 ```
@@ -55,10 +55,10 @@ Process entry (`App/ClementineApp.swift`, `Entry.main`): debug-only `--render-ui
 
 | Folder | Key types |
 | --- | --- |
-| `App/` | `Entry`/`ClementineApp`/`AppDelegate` (entry, menu bar). `CLI` (headless commands). `ServiceProvider` (Finder Services). `Updater` (Sparkle wrapper). `HistoryMenu` (Open Files…, Recent, Undo). `SettingsWindow` (General + Wheel tabs), `WheelSettings` (`WheelCatalog`, `WheelPrefs`, live preview). `OnboardingWindow` (welcome tour, launch-at-login via `SMAppService`). `Shortcuts.swift`: App Intents (`ConvertWithClementineIntent`, `RemoveBackgroundIntent`, `ConvertImagesIntent`, `ClementineActionEntity` + query) over `ShortcutRunner`. |
+| `App/` | `Entry`/`ClementineApp`/`AppDelegate` (entry, menu bar). `CLI` (headless commands). `ServiceProvider` (Finder Services). `Updater` (Sparkle wrapper). `HistoryMenu` (Open Files…, Recent, Undo). `SettingsWindow` (General + Wheel tabs), `WheelSettings` (`WheelCatalog`, `WheelPrefs`, live preview, `PresetsModel` and the Presets section). `PresetsCLI` (`--list-presets`, `--save-preset`, …). `OnboardingWindow` (welcome tour, launch-at-login via `SMAppService`). `Shortcuts.swift`: App Intents (`ConvertWithClementineIntent`, `RemoveBackgroundIntent`, `ConvertImagesIntent`, `ClementineActionEntity` + query) over `ShortcutRunner`. |
 | `Drag/` | `DragMonitor` (detects file drags + modifiers), `WheelController` (glue: monitor → panel → `JobRunner`; also `--demo-wheel`, `openFiles()`, `showClickable`). |
 | `Wheel/` | `WheelPanel` (+ private `WheelWindow`, `DropCatcher`), `WheelModel` (actions, geometry, hit-testing, thumbnail), `WheelView` (SwiftUI ring, `Slice` shape, `Hub`, `ModeChip`, `EmptyNotice`). |
-| `Actions/` | `Action`, `Parameter`, `ParamValue(s)`, `JobContext`, `JobOutput`, `Editor`, `WheelMode`, `ActionRegistry` (`Action.swift`). Catalogs: `ConvertActions`, `ToolActions`. `WheelOrdering.swift`: `HiddenActions`, `ActionUsage` (frecency). |
+| `Actions/` | `Action`, `Parameter`, `ParamValue(s)`, `JobContext`, `JobOutput`, `Editor`, `WheelMode`, `ActionRegistry` (`Action.swift`). Catalogs: `ConvertActions`, `ToolActions`, `FileActions` (the ⌃ wheel, plus `FileEffects` for Terminal/Finder/AirDrop). `Presets.swift`: `Preset`, `PresetStore` (`presets.json`, validation, editing). `WheelOrdering.swift`: `HiddenActions`, `ActionUsage` (frecency). |
 | `Engines/` | `ImageEngine` (ImageIO load/encode, `ImageFormat`), `ImageTools` (⌥⇧ image tools, Core Image), `ImageEdits` (full-res crop/redact/annotate from JSON), `BackgroundRemover` (Vision subject lifting for Cut Out Subject), `PDFEngine` (PDFKit, page specs), `DocumentEngine` (`@MainActor`, AppKit text system), `MediaEngine` + `FFmpeg` (probe, encode args, progress), `ArchiveEngine` (system zip/bsdtar/gzip/bzip2), `SubtitleEngine`, `MetadataEngine` (read/write common fields, `(edited)` copies), `ProcessRunner` + `ToolLocator`. |
 | `ImageEditor/` | `ImageEditorWindow` (panel + `EditorShell`), `EditorCanvas` (`EditorImage`, `CanvasMapping`, `RectHandle`, toolbar pieces), `CropEditor`, `RedactEditor`, `AnnotateEditor`. |
 | `Waveform/` | `Waveform` + `WaveformLoader` (peaks, in-memory cache), `Playback` (AVPlayer, `PreviewRenders` in a temp folder), `WaveformEditorModel` (`EditorModel.swift`), `WaveformViews` (shared views, `EditorWindow`), `TrimEditor`, `BleepEditor`, `ChannelsEditor`. |
@@ -78,9 +78,15 @@ Process entry (`App/ClementineApp.swift`, `Entry.main`): debug-only `--render-ui
   - Button released (`NSEvent.pressedMouseButtons & 1 == 0`): stop the timer, and send `.ended` if a wheel was up.
   - Change count unchanged: no drag yet. Once it changes, read file URLs. If there are none (a text drag, say),
     stop polling until the next click.
-  - Needs `Prefs.enabled` and ⇧ held (`NSEvent.modifierFlags`). ⌥ picks `.tools`, otherwise `.convert`. The
-    first match sends `.began(urls, mode)`, and a later change sends `.modeChanged`. Letting go of ⇧ keeps the
-    current wheel up.
+  - Needs `Prefs.enabled` and a wheel key (`wheel(for:now:)` on `NSEvent.modifierFlags`): ⇧ gives `.convert`,
+    ⌥⇧ `.tools`; ⇧ wins over ⌃. ⌃ without ⇧ or ⌘ gives `.files` once it has been held `controlHold` (0.25 s)
+    and `Prefs.controlWheel` is on. The first match sends `.began(urls, mode)`, and a later change sends
+    `.modeChanged`. Letting go of the keys keeps the current wheel up.
+  - Why ⌃ and why the delay: in a Finder drag ⌥ means copy, ⌘ move and ⌥⌘ alias, while ⌃ has no drag meaning, so
+    it doesn't change what a normal drop does. But ⌃← / ⌃→ (and ⌃↑ for Mission Control) are the usual way to carry
+    a dragged file to another Space, and we can't see arrow keys without Accessibility, so a short hold keeps a
+    quick ⌃-arrow from flashing the wheel. ⌃ must come after the drag starts: ⌃-click is a right-click, so Finder
+    opens its context menu instead of dragging.
 - `WheelController.handle` shows the panel at `NSEvent.mouseLocation`. On `.ended` it waits 0.3 s, because the
   drop arrives after mouse-up, then hides the wheel, but only for the same generation (`currentGeneration`), so a
   newer wheel stays put.
@@ -124,29 +130,41 @@ session finishes before any window opens.
 `beginClickMode()` sets `model.interactive`, lets the `WheelWindow` become key (`acceptsKey`), and makes the
 catcher first responder. It installs global and local mouse-down monitors plus a `didResignKey` observer, all of
 which dismiss the wheel. `mouseDown` remembers the slice that was pressed, and `mouseUp` runs it only if the
-pointer is still on that slice. Releasing on the chip toggles the mode, and releasing on the hub or empty space
-dismisses. Keys: Esc dismisses, Return/Enter/Space run the slice, Tab toggles the mode, and the arrow keys walk
-the ring. If neither wheel has anything to offer, the empty notice shows for 1.6 s and closes.
+pointer is still on that slice. Releasing on the chip moves to the next wheel (`WheelMode.next`: convert → tools →
+files → convert), and releasing on the hub or empty space dismisses. Keys: Esc dismisses, Return/Enter/Space run
+the slice, Tab moves to the next wheel, and the arrow keys walk the ring. If no wheel has anything to offer, the
+empty notice shows for 1.6 s and closes. Services has a third entry, "Clementine File Actions", that opens the ⌃
+wheel.
 
 ### 3.3 Actions and ordering — `Actions/`
 
-- `ActionRegistry.all = ConvertActions.all + ToolActions.all + ConvertActions.archiveCreate`. `find(id)` is
-  used by the CLI and `PageOrganizer`.
-- `candidates(for:mode:)` keeps the actions from the mode's catalog where the selection count fits
+- `ActionRegistry.all = ConvertActions.all + ToolActions.all + ConvertActions.archiveCreate + FileActions.all`.
+  `find(id)` (used by the CLI and `PageOrganizer`) also finds presets by id.
+- `catalog(mode)` is the mode's catalog with each valid preset inserted right after the action it's based on.
+- `candidates(for:mode:)` keeps the actions from `catalog(mode)` where the selection count fits
   `minInputs...maxInputs` and every `FileItem` passes `accepts`. In convert mode it adds the `archive.*` actions
   when nothing else matched, or when everything is a folder or `.other`.
-- `actions(for:mode:)` drops `HiddenActions.ids`, sorts with `ActionUsage.arrange`, and keeps the first **12**
-  ("so labels stay readable").
+- `actions(for:mode:)` drops `HiddenActions.ids`, sorts with `ActionUsage.arrange`, and keeps the first
+  `ActionRegistry.maxSlices` (**13**, presets included) "so labels stay readable".
 - Frecency (`WheelOrdering.swift`): each use adds 1 to a score that halves every 14 days. Scores live in
   UserDefaults `actionUsage` as `[bucket: [actionID: [score, lastUsed]]]`, where the bucket is
-  `"<kind>.<convert|tools>"`, or `mixed.*` when the selection has different kinds. Ties keep catalog order. The
+  `"<kind>.<convert|tools|files>"`, or `mixed.*` when the selection has different kinds. Ties keep catalog order. The
   `orderByUsage` setting (default on) turns sorting off. Hidden slices (`hiddenActions`) only leave the wheel and
   can still run from `--run`.
 - `FileItem` (`Support/FileItem.swift`) classifies by extension, then by UTType. Any directory counts as
   `.folder`, packages included.
 - Catalog order is wheel order. Convert IDs look like `convert.image.webp`, `convert.media.mp4`,
   `convert.pdf.png` and `archive.zip`. Tool IDs look like `tool.compress`, `tool.fit`, `tool.image.crop`,
-  `tool.audio.bleep`, `tool.pdf.merge` and `tool.metadata`.
+  `tool.audio.bleep`, `tool.pdf.merge` and `tool.metadata`. File actions are `file.path`, `file.sha256`, …
+- Presets (`Actions/Presets.swift`): `{id, name, action, values}` in `Prefs.supportDirectory/presets.json`, values
+  stored in `--set` syntax with choices by label. `PresetStore.validate` rebuilds each one as an `Action`
+  (`isPreset`, title = name, the base action's symbol, `accepts`, inputs and batch, and a `run` that calls the
+  base `run` with the saved `ParamValues`, no parameters so no sheet). Values go through `CLI.parse` plus the
+  typed-number range. The store re-reads the file when its modification date changes (so `--save-preset` from a
+  terminal shows up in the running app) and reports skipped presets through `PresetStore.warn` (NSLog in the app,
+  stderr in the CLI). Ids are `preset.` + random hex so renaming keeps hidden/usage state. Saving: the parameter
+  sheet's **Save as Preset…** (Return/Esc move to the name row while it's open), Settings › Wheel › Presets
+  (rename, reorder, hide, delete), and the CLI.
 
 ### 3.4 The `Action` model — `Actions/Action.swift`
 
@@ -160,7 +178,7 @@ the ring. If neither wheel has anything to offer, the empty notice shows for 1.6
 | `parameters` | `.slider`, `.number`, `.choice`, `.text`. `ParameterWindow` builds a form from them automatically, and `defaults` collects the initial values. |
 | `preview` | `(URL, ParamValues) async -> NSImage?`, a live preview in the parameter sheet for single-image inputs (Edit, Add BG). |
 | `editor` | `Editor = @MainActor (urls, defaults, apply) -> Void`. A custom window used instead of the sheet. It must end by calling `apply(ParamValues)`. |
-| `run` | `(JobContext) async throws -> JobOutput`. `JobContext` has `inputs`, `params` and a thread-safe `progress(0…1)`. Returns `.files([URL])` or `.text(title:body:)`. |
+| `run` | `(JobContext) async throws -> JobOutput`. `JobContext` has `inputs`, `params` and a thread-safe `progress(0…1)`. Returns `.files([URL])`, `.text(title:body:)`, `.value(String)` (copied by the app, printed by the CLI) or `.done(String)` (a message: something happened outside Clementine). |
 
 To add an action, add it to `ConvertActions` or `ToolActions`. No other registration is needed.
 
@@ -174,7 +192,9 @@ To add an action, add it to `ConvertActions` or `ToolActions`. No other registra
   `JobOutput.unchanged(note)` (Compress whose result wasn't smaller, see `JobOutput.smaller`) wrote nothing on
   purpose: they land in `BatchReport.notes`, the card's detail line shows the note (`JobRunner.note`, up to two
   lines) and stays 4 s, and the CLI prints `kept: <file>: <note>` on stderr. When it finishes:
-  reveal the files in Finder (`Prefs.revealInFinder`), open a `ResultWindow` for each text output, write a
+  reveal the files in Finder (`Prefs.revealInFinder`), open a `ResultWindow` for each text output, copy
+  `.value` results (joined by newlines) to the clipboard and show them on the card (`RunningJob.result`; the card
+  stays 5 s), put `.done` messages (`BatchReport.messages`) in the card's detail line, write a
   history entry, and offer Undo on the card. The card closes after 1.2 s, or 5 s if Undo is available. Hovering
   keeps it open (`ProgressPanel.close(after:)`). A failure leaves the card open with the messages; `JobView`
   shows the first `JobView.collapsedLines` (4) lines and a "Show details…" link that opens the rest in a
@@ -389,6 +409,7 @@ static array until `willClose`.
 | `hiddenActions` | `HiddenActions.key` (sorted string array) | `[]` |
 | `actionUsage` | `ActionUsage.key` (frecency dict) | `{}` |
 | `orderByUsage` | `ActionUsage.orderKey` | `true` |
+| `controlWheel` | `Prefs.controlWheelKey` (`DragMonitor`, Settings › General) | `true` |
 | `hasSeenOnboarding` | `OnboardingWindow.seenKey`, written to **`UserDefaults.standard`**, not `Prefs.defaults`. Set when the tour is finished or closed, not when it's scheduled, so a tour that never appeared comes back. | `false` |
 | `launchAtLoginDecided` | `LaunchAtLogin.decidedKey` (`SettingsWindow.swift`), `.standard`. Set once the launch-at-login default has been applied or the user flipped either switch. | unset |
 
@@ -401,9 +422,11 @@ static array until `willClose`.
   `.build/debug/Clementine` falls back to a domain named after the executable (`~/Library/Preferences/Clementine.plist`).
   `@AppStorage` in Settings and the menu writes to `.standard`.
 - History: `Prefs.supportDirectory/history.json`, i.e. `~/Library/Application Support/Clementine/history.json`.
+  Presets: `Prefs.supportDirectory/presets.json`.
 - Debug-only environment overrides (`#if DEBUG`): `CLEMENTINE_DEFAULTS_SUITE` (scratch defaults suite for
-  `Prefs.defaults`), `CLEMENTINE_SUPPORT_DIR` (history location) and `CLEMENTINE_TRACE_CONCURRENCY`
-  (prints peak parallelism). `scripts/test-productivity.sh` uses them.
+  `Prefs.defaults`), `CLEMENTINE_SUPPORT_DIR` (history and presets location), `CLEMENTINE_TRACE_CONCURRENCY`
+  (prints peak parallelism) and `CLEMENTINE_FAKE_EFFECTS` (file actions describe Terminal/Finder/AirDrop instead
+  of opening them). `scripts/test-productivity.sh` uses them.
   `@AppStorage` and the onboarding flag ignore the suite override.
 - Waveform peaks are cached in memory only (`WaveformLoader.cache`), and peak extraction uses temporary
   `clementine-peaks-*.f32` files.
@@ -455,7 +478,9 @@ static array until `willClose`.
   in-process, through `ShortcutRunner` and `BatchRunner` like the CLI. Inputs without a file URL are written to a
   temporary folder first, text results come back as `.txt` files, and errors are rethrown as `ShortcutError` so
   Shortcuts shows the plain message. `ClementineActionQuery` reads the intent's files through
-  `@IntentParameterDependency` to suggest only actions that fit them. Note that the app's own `Parameter` type
+  `@IntentParameterDependency` to suggest only actions that fit them; the list covers all three wheels and the
+  user's presets (by their own names, grouped as "Preset"). File-action values come back as `.txt` results and
+  `.done` actions (Terminal, Reveal, AirDrop) return nothing. Note that the app's own `Parameter` type
   shadows App Intents' `Parameter` alias, so intents use `@IntentParameter`.
 - **Gentle update reminders** (`UpdateReminder` in `App/Updater.swift`, the controller's user-driver delegate):
   as a menu bar (`LSUIElement`) app, a scheduled check's alert would otherwise open behind the front app.
@@ -468,8 +493,8 @@ static array until `willClose`.
   brings the held session's alert to the front). `standardUserDriverDidReceiveUserAttention` withdraws the
   notification and `standardUserDriverWillFinishUpdateSession` clears the cue. When Sparkle shows an alert itself,
   the app activates so it isn't behind Finder. `--render-ui` draws both icons (`menubar-icon-*.png`).
-- **Services:** `Info.plist › NSServices` declares "Convert with Clementine" (`convertFiles`) and
-  "Clementine Tools" (`toolFiles`) for `public.item` files. `ServiceProvider.register()` sets
+- **Services:** `Info.plist › NSServices` declares "Convert with Clementine" (`convertFiles`),
+  "Clementine Tools" (`toolFiles`) and "Clementine File Actions" (`fileActions`) for `public.item` files. `ServiceProvider.register()` sets
   `NSApp.servicesProvider` and calls `NSUpdateDynamicServices()`. Both handlers read file URLs from the
   pasteboard and open the click-mode wheel at the pointer. In practice Finder only lists the entries for a copy
   in `/Applications` (`make install`), where the services database picks it up. Nothing in the code checks the
@@ -530,11 +555,11 @@ static array until `willClose`.
 ## Testing entry points (quick reference)
 
 - `make test` runs the shell suites in `scripts/` (smoke, edge, stress, image editor, waveform,
-  PDF/metadata, productivity) against `.build/debug/Clementine --run …`.
+  PDF/metadata, productivity, presets/file actions) against `.build/debug/Clementine --run …`.
 - `make ui-test` runs `.build/debug/Clementine --ui-test [filter…]`, which needs a logged-in GUI session. Tag
   controls with `.uiTestID("…")` (debug-only frame registry in `Support/UITestID.swift`) and add suites to
   `UITest.all`.
 - `--shortcut-run <action-id> [--set key=value]… file…` (debug) runs `ShortcutRunner`, the code behind the
   Shortcuts actions, and prints what the intent would return.
-- `--render-wheel out.png [--tools] [--hover N] [--light] [--click [--chip]] file…`, `--render-ui <dir>`
+- `--render-wheel out.png [--tools | --files] [--hover N] [--light] [--click [--chip]] file…`, `--render-ui <dir>`
   (debug) and `--demo-wheel` (live wheel, app mode) are visual dev aids.

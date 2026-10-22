@@ -88,6 +88,9 @@ jobs:
       - name: Productivity test
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: scripts/test-productivity.sh
+      - name: Presets and file actions test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/test-presets-files.sh
       - name: Lifecycle test
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: scripts/test-lifecycle.sh

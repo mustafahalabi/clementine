@@ -1,6 +1,6 @@
 import AppKit
 
-/// Finder › right-click › Services › "Convert with Clementine" / "Clementine Tools".
+/// Finder › right-click › Services › "Convert with Clementine" / "Clementine Tools" / "Clementine File Actions".
 /// The entries are declared under NSServices in Info.plist; each one opens the click-mode wheel at the pointer.
 @MainActor
 final class ServiceProvider: NSObject {
@@ -17,6 +17,10 @@ final class ServiceProvider: NSObject {
 
     @objc func toolFiles(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
         show(pasteboard, mode: .tools, error: error)
+    }
+
+    @objc func fileActions(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
+        show(pasteboard, mode: .files, error: error)
     }
 
     private func show(_ pasteboard: NSPasteboard, mode: WheelMode, error: AutoreleasingUnsafeMutablePointer<NSString?>) {

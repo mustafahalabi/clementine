@@ -106,6 +106,7 @@ enum UIPreview {
                            appearance: appearance, settle: 1.2, to: out("onboarding-\(page + 1)"))
         }
         renderProductivity(appearance: appearance, out: out)
+        renderPresetsAndFileActions(appearance: appearance, out: out)
         renderWaveformEditors(appearance: appearance, media: media, out: out)
         renderPDFAndMetadata(appearance: appearance, image: image, out: out)
         renderImageEditors(appearance: appearance, out: out)
@@ -140,6 +141,40 @@ enum UIPreview {
         snapshotWindow(NSHostingController(rootView: SettingsView(tab: .wheel)), appearance: appearance, settle: 1.6, to: out("settings-wheel"))
         let tools = WheelSettingsView(kind: "audio", mode: .tools).frame(width: 520).background(WindowBackdrop()).tint(Theme.tangerine)
         snapshotWindow(NSHostingController(rootView: tools), appearance: appearance, settle: 1.6, to: out("settings-wheel-tools"))
+    }
+
+    /// File-action result cards, the sheet with Save as Preset open, and Settings › Wheel on the ⌃ wheel (with
+    /// whatever presets `CLEMENTINE_SUPPORT_DIR` holds).
+    private static func renderPresetsAndFileActions(appearance: NSAppearance, out: (String) -> URL) {
+        let hash = RunningJob(title: "SHA-256", symbol: "number", detail: "Copied to the clipboard")
+        hash.progress = 1
+        hash.state = .done
+        hash.result = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+        let paths = RunningJob(title: "Copy Path", symbol: "doc.on.clipboard", detail: "Copied to the clipboard")
+        paths.progress = 1
+        paths.state = .done
+        paths.result = "/Users/me/Movies/Lisbon/IMG_2041 holiday in Lisbon.heic\n/Users/me/Movies/Lisbon/IMG_2042.heic\n/Users/me/Movies/Lisbon/IMG_2043.heic\n/Users/me/Movies/Lisbon/IMG_2044.heic"
+        let terminal = RunningJob(title: "Open in Terminal", symbol: "terminal", detail: "Opened in Terminal: /Users/me/Movies/Lisbon")
+        terminal.progress = 1
+        terminal.state = .done
+        let cards = VStack(spacing: 14) {
+            ForEach([hash, paths, terminal], id: \.title) { job in
+                JobView(job: job, cancel: {}, dismiss: {}).shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+            }
+        }
+        .padding(28)
+        .background(LinearGradient(colors: [Color(hex: 0x6E8CA8), Color(hex: 0xB59BC4)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        snapshot(NSHostingView(rootView: cards), appearance: appearance, to: out("progress-file-actions"))
+
+        if let fit = ActionRegistry.find("tool.fit") {
+            var values = fit.defaults
+            values.storage["megabytes"] = .number(10)
+            let form = ParameterForm(action: fit, urls: [URL(fileURLWithPath: "/tmp/clip.mov")], values: values,
+                                     onApply: { _ in }, onCancel: {}, presetName: PresetStore.suggestedName(for: fit, values: values))
+            snapshotWindow(NSHostingController(rootView: form), appearance: appearance, to: out("parameters-save-preset"))
+        }
+        let files = WheelSettingsView(kind: "image", mode: .files).frame(width: 520).background(WindowBackdrop()).tint(Theme.tangerine)
+        snapshotWindow(NSHostingController(rootView: files), appearance: appearance, settle: 1.6, to: out("settings-wheel-files"))
     }
 
     /// Trim, Bleep and Channels editors with real peaks read from the given audio and video files.

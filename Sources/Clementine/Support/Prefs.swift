@@ -6,6 +6,7 @@ enum Prefs {
     static let revealKey = "revealInFinder"
     static let qualityKey = "imageQuality"
     static let toolsDirectoryKey = "toolsDirectory"
+    static let controlWheelKey = "controlWheel"
     static let hardwareEncodingKey = "hardwareEncoding"
 
     /// The bundled app reads `app.clementine.Clementine`; the unbundled debug binary falls back to a domain named
@@ -33,6 +34,8 @@ enum Prefs {
     static var revealInFinder: Bool { defaults.object(forKey: revealKey) as? Bool ?? true }
     static var imageQuality: Double { defaults.object(forKey: qualityKey) as? Double ?? 0.85 }
     static var toolsDirectory: String? { defaults.string(forKey: toolsDirectoryKey) }
+    /// Whether ⌃ while dragging opens the file actions wheel (Settings › General).
+    static var controlWheel: Bool { defaults.object(forKey: controlWheelKey) as? Bool ?? true }
     /// H.264/HEVC through VideoToolbox (see `FFmpeg.Hardware`).
     static var hardwareEncoding: Bool { defaults.object(forKey: hardwareEncodingKey) as? Bool ?? true }
 }

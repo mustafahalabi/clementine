@@ -25,14 +25,14 @@ enum ActionUsage {
         set { Prefs.defaults.set(newValue, forKey: orderKey) }
     }
 
-    /// "image.convert", "video.tools", or "mixed.convert" for selections of different kinds.
+    /// "image.convert", "video.tools", "pdf.files", or "mixed.convert" for selections of different kinds.
     static func bucket(for items: [FileItem], mode: WheelMode) -> String {
         let kinds = Set(items.map { "\($0.kind)" })
         return bucket(kind: kinds.count == 1 ? kinds.first! : "mixed", mode: mode)
     }
 
     static func bucket(kind: String, mode: WheelMode) -> String {
-        "\(kind).\(mode == .convert ? "convert" : "tools")"
+        "\(kind).\(mode.name)"
     }
 
     static func record(_ action: Action, urls: [URL], now: Date = Date()) {

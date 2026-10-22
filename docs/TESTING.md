@@ -32,6 +32,7 @@ which it uses (`Clementine uses tools in …`). Fixtures are always made with th
 | `test-waveform.sh` | Channels (layouts, gains, RMS levels per channel, 5.1), Bleep on audio and video (picture copied, tone inside/silence outside, codecs), Trim with editor-style ms times, and `--render-ui` of the Trim/Bleep/Channels editors in light and dark. The renders are skipped only when there's no GUI session (`launchctl managername` isn't `Aqua`, e.g. over ssh); a crash or non-zero exit fails the suite. | 32 | ~75 s (≈65 s is `--render-ui`) |
 | `test-pdf-metadata.sh` | Page specs (`3r90`, `r-90`, bare `r90`, duplicates, `1:` prefix, rotation adding up) and merge specs (`2:1-3`, cross-file numbering, error wording). Metadata writers for JPG/PNG/HEIC, MP3/M4A/Opus/FLAC/MOV and PDF: round-trips, clearing, no re-encoding, date/year/track/rating validation. | 70 | ~9 s |
 | `test-productivity.sh` | Wheel ordering from `--record`ed usage (per kind and mode, `orderByUsage` off), hidden slices, history (JSON, 50 cap, order, undo, skip-gone, clear), parallel batches (order, concurrency limits via `CLEMENTINE_TRACE_CONCURRENCY`, the image memory budget via `CLEMENTINE_MEMORY_BUDGET_MB`, collision-free names, partial failure exit 1). Uses a scratch defaults suite and support dir. | 36 | ~6 s |
+| `test-presets-files.sh` | The ⌃ wheel: `--list` contents (folders get no hash/data URI, no data URI over 5 MB), SHA-256 against `shasum` (single, several, 6 MB), Copy Path/Name with spaces and quotes, data URIs decoded back, Terminal/Reveal/AirDrop through `CLEMENTINE_FAKE_EFFECTS`, no files written, usage ordering, no history. Presets: save (canonical values, id), `--list-presets`, slice placement and `accepts`, `--preset` by name and `--run <id>`, history title, every refusal (taken name, no settings, unknown action/key, bad choice, number out of range, empty name), rename, hide, delete; Shortcuts (`--shortcut-run`: values as text, Terminal returns nothing, presets run); load-time checks on a hand-written file (six kinds of invalid preset skipped with reasons) and an unreadable file moved aside. Scratch defaults suite and support dir. | 61 | ~8 s |
 | `test-video.sh` | HLG/PQ fixtures (10-bit HEVC; made with the bundled ffmpeg's zscale when available): tone-mapping to BT.709 for every SDR output (tags plus a luma/saturation check against washed-out passthrough), also through the no-zscale fallback with Homebrew's ffmpeg; HDR kept as `hvc1` 10-bit HEVC by Trim/Speed/Rotate/Join; VideoToolbox used (no x264 SEI), the x264/x265 fallback through a fake ffmpeg that refuses VideoToolbox, `--software`, the Settings toggle, Compress on x264; Join canvas with display-matrix rotation and frame rates; GIF fps/width/target size; Trim/Speed/Rotate on TS/FLV/3GP/MPG. | 58 | ~30 s |
 | `test-lifecycle.sh` | Process lifecycle: SIGINT/SIGTERM/SIGHUP during a long encode (exit 128 + n, ffmpeg gone, no output or partial left, power assertion held), SIGKILL mid-encode (the output only ever exists as a hidden `.clementine-*` temporary; the next launch removes it and drops the folder from the in-progress journal), what the sweep keeps (live owner, look-alike names, folders not in the journal), the final name being taken during a write (next free name), failed writes (temporary gone, real name in the message), a tool that ignores SIGTERM (SIGKILL after the grace period), a second signal, fake tools that crash, get killed or exit 255 by themselves (failures, exit 1), and `--set`/`--hover` validation (exit 2). Fake tools go in through the `toolsDirectory` setting in a scratch defaults suite. | 67 | ~30 s |
 
@@ -117,9 +118,13 @@ covering its Close button; the stack is parked off-screen through `ProgressPanel
 3:1 for bold labels, ≥ 7:1 with Increase Contrast; the deep accent ≥ 4.5:1; accent text on cream and charcoal),
 `error copy` (brew hints only without bundled tools, `brew install webp` for img2webp, plain-sentence ffmpeg
 failures, the "Text (OCR)" slice), `midline` (clicks on a control's exact center land, across button styles and
-the chip picker) and `lifecycle quit` (a running encode stopped the way quitting stops it: no tool, job or partial
-output left; it runs last because it refuses tool launches afterwards): 51 checks,
-about 25 s.
+the chip picker), `preset sheet` (Save as Preset… saves the sheet's values under the suggested name; Return and
+Esc belong to the name row while it's open and to Apply/Cancel otherwise; a taken name is refused; the preset is a
+slice after its action), `preset settings` (reorder, hide, rename and delete from Settings › Wheel), `file actions
+wheel` (the ⌃/⇧/⌥⇧ rules including the 0.25 s ⌃ hold and the Settings switch, the slices for files and folders,
+Tab cycling the three click-mode wheels, a copied value on the job card) and `lifecycle quit` (a running encode stopped the way quitting stops it: no tool, job or partial
+output left; it runs last because it refuses tool launches afterwards): 82 checks,
+about 35 s. The preset suites point `CLEMENTINE_SUPPORT_DIR` at a scratch folder while they run.
 
 **Writing a suite.** Add a file in `Sources/Clementine/Testing/` that extends `UITest` with
 `static var <area>: [Suite]`, and append it to `UITest.all` (kept sorted by area).
@@ -184,8 +189,8 @@ and `settings.launchAtLogin`), so tag the controls a new suite needs as you go.
 | Command | What you get |
 |---|---|
 | `.build/debug/Clementine --render-ui /tmp/ui photo.jpg voice.m4a clip.mp4` | Every job window, Settings tab, onboarding page and editor, light and dark, as PNGs (~70 s with media). Debug only. Prefix `CLEMENTINE_INCREASE_CONTRAST=1` to render the Increase Contrast accents. |
-| `.build/debug/Clementine --render-wheel /tmp/wheel.png [--tools] [--hover N] [--light] [--click [--chip]] photo.jpg` | The wheel for those files as a PNG (~2 s). Works in any build. |
-| `build/Clementine.app/Contents/MacOS/Clementine --demo-wheel [--tools] [--click] [--hover N] photo.jpg` | The live wheel at screen center without a drag, with real materials and animation. Bundle it first with `scripts/bundle.sh debug`, and quit any running Clementine first. |
+| `.build/debug/Clementine --render-wheel /tmp/wheel.png [--tools \| --files] [--hover N] [--light] [--click [--chip]] photo.jpg` | The wheel for those files as a PNG (~2 s). Works in any build. |
+| `build/Clementine.app/Contents/MacOS/Clementine --demo-wheel [--tools \| --files] [--click] [--hover N] photo.jpg` | The live wheel at screen center without a drag, with real materials and animation. Bundle it first with `scripts/bundle.sh debug`, and quit any running Clementine first. |
 
 Renders draw materials flat. Use `--demo-wheel` or the real app for vibrancy and blur. File names are listed in
 [CLI.md](CLI.md#--render-ui-dir-image-audio-video).
@@ -201,8 +206,18 @@ them. Test the bundled app (`make install` copies it to `/Applications`):
       modifiers, or dropping elsewhere, hides the wheel and leaves Finder's drop behaving normally.
 - [ ] Multi-file drags (batch tools appear, progress card counts up, Undo on the finished card), a folder
       (archives only), parameter sheets and each editor window opening from a slice.
+- [ ] **⌃ mid-drag**: start a Finder drag, then hold ⌃ alone. After about a quarter second the file actions wheel
+      (FILE chip) appears; ⌃⇧ gives the convert wheel. Dropping elsewhere still moves/copies as usual. ⌃→ during a
+      drag still switches Spaces without the wheel flashing. Holding ⌃ *before* the click opens Finder's context
+      menu (expected). With Settings › General › "⌃ opens the file actions wheel" off, nothing appears.
+- [ ] **File actions**: Copy Path / Copy Name / SHA-256 / Data URI put the value on the clipboard (`pbpaste`) and
+      show it on the card; Open in Terminal opens a Terminal window in the folder; Reveal selects it in Finder;
+      AirDrop shows the picker in front (sending and cancelling both end the card).
+- [ ] **Presets**: Save as Preset… in a tool's sheet adds a slice (with a small bookmark) after that tool; it runs
+      without the sheet. Rename, reorder, hide and delete in Settings › Wheel update the wheel. A
+      `--save-preset` from Terminal shows up in the running app.
 - [ ] **Services from /Applications**: right-click files › Services (or Quick Actions) › *Convert with Clementine*
-      / *Clementine Tools* opens the click-mode wheel at the pointer. Services register from the installed bundle.
+      / *Clementine Tools* / *Clementine File Actions* opens the click-mode wheel at the pointer. Services register from the installed bundle.
       If they're missing, relaunch the app, and log out if needed.
 - [ ] **Sparkle**: *Check for Updates…* in the menu works from the installed, signed app. From `.build/debug`, or
       with the placeholder `SUPublicEDKey`, it explains that updates are off instead of checking.

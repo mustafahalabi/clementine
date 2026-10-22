@@ -88,7 +88,7 @@ After `make tools`, the suites run Clementine against the bundled tools in `vend
 ## Conventions
 
 - **Swift 6 toolchain, Swift 5 language mode**, macOS 14+.
-- **New wheel action:** add an `Action` to `Actions/ConvertActions.swift` or `Actions/ToolActions.swift` with an
+- **New wheel action:** add an `Action` to `Actions/ConvertActions.swift`, `Actions/ToolActions.swift` or `Actions/FileActions.swift` with an
   `accepts` predicate, `parameters` (they get a settings sheet for free) and a `run` closure that calls an engine.
   Interactive editors use the `editor` hook and must still produce plain `ParamValues` (JSON in `.text` values
   for complex data). Add CLI cases to a `scripts/*.sh` suite and the action to docs/CLI.md.

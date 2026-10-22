@@ -17,6 +17,7 @@ enum ShortcutRunner {
 
     /// What Shortcuts lists for an action: wheel titles are format names ("PNG"), which need a verb out of context.
     static func name(of action: Action) -> String {
+        if action.isPreset { return action.title } // the user's own name for it
         if action.id == "convert.archive.extract" { return "Extract Archive" }
         if action.id.hasPrefix("archive.") { return "Archive as \(action.title)" }
         if action.mode == .convert { return "Convert to \(action.title)" }
@@ -26,7 +27,8 @@ enum ShortcutRunner {
     /// The kind of file an action is for, to tell apart actions with the same name (three Rotates, two Joins).
     static func group(of action: Action) -> String {
         let parts = action.id.split(separator: ".")
-        if parts.first == "archive" { return "Files and folders" }
+        if action.isPreset { return "Preset" }
+        if parts.first == "archive" || parts.first == "file" { return "Files and folders" }
         guard parts.count >= 3 else { return "Images, video and audio" }
         switch parts[1] {
         case "image": return "Images"
@@ -42,12 +44,14 @@ enum ShortcutRunner {
         }
     }
 
-    /// Actions that can take all of these files, wheel order, convert before tools. Hidden slices included:
-    /// someone picking an action in Shortcuts wants the whole catalog.
+    /// Actions that can take all of these files, wheel order, convert, then tools, then file actions; presets sit
+    /// after the action they're based on. Hidden slices included: someone picking an action in Shortcuts wants the
+    /// whole catalog.
     static func actions(for urls: [URL]) -> [Action] {
-        guard !urls.isEmpty else { return ActionRegistry.all }
-        let fitting = ActionRegistry.candidates(for: urls, mode: .convert) + ActionRegistry.candidates(for: urls, mode: .tools)
-        return fitting.isEmpty ? ActionRegistry.all : fitting
+        let everything = ActionRegistry.all + PresetStore.shared.actions().map(\.action)
+        guard !urls.isEmpty else { return everything }
+        let fitting = [WheelMode.convert, .tools, .files].flatMap { ActionRegistry.candidates(for: urls, mode: $0) }
+        return fitting.isEmpty ? everything : fitting
     }
 
     /// `key=value` overrides, checked exactly like the CLI's `--set`.
@@ -103,6 +107,10 @@ enum ShortcutRunner {
             case .success(.text(let title, let body)): return [.text(title: title, body: body)]
             // Compress kept the original: hand it on so the rest of the shortcut still gets a file.
             case .success(.unchanged): return outcome.unit.map { .file($0) }
+            // A copied value (path, hash) comes back as text; the clipboard is left alone.
+            case .success(.value(let value)): return [.text(title: name(of: action), body: value)]
+            // Terminal, Finder or AirDrop did the work; there's nothing to pass on.
+            case .success(.done): return []
             case .failure: return []
             }
         }

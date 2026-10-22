@@ -14,12 +14,14 @@ enum WheelCatalog {
 
         var id: String { kind }
 
+        /// Includes the user's presets, each after the action it's based on.
         func actions(_ mode: WheelMode) -> [Action] {
-            guard !samples.isEmpty else { return mode == .convert ? ConvertActions.archiveCreate : [] }
-            let items = samples.map { FileItem(url: URL(fileURLWithPath: "/clementine-sample/file.\($0)")) }
-            return (mode == .convert ? ConvertActions.all : ToolActions.all).filter { action in
-                items.contains(where: action.accepts)
-            }
+            if samples.isEmpty && mode == .convert { return ConvertActions.archiveCreate }
+            // Folders: any real folder will do (FileItem looks at the disk to tell).
+            let items = samples.isEmpty
+                ? [FileItem(url: FileManager.default.temporaryDirectory)]
+                : samples.map { FileItem(url: URL(fileURLWithPath: "/clementine-sample/file.\($0)")) }
+            return ActionRegistry.catalog(mode).filter { action in items.contains(where: action.accepts) }
         }
 
         var icon: NSImage {
@@ -69,6 +71,7 @@ struct WheelSettingsView: View {
     @StateObject private var preview = WheelModel()
     @State private var group: WheelCatalog.Group
     @State private var mode: WheelMode
+    @StateObject private var presets = PresetsModel()
     @Environment(\.colorScheme) private var scheme
 
     init(kind: String = "image", mode: WheelMode = .convert) {
@@ -95,6 +98,7 @@ struct WheelSettingsView: View {
                         Picker("Wheel", selection: $mode) {
                             Text("Convert ⇧").tag(WheelMode.convert)
                             Text("Tools ⌥⇧").tag(WheelMode.tools)
+                            Text("Files ⌃").tag(WheelMode.files)
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
@@ -111,6 +115,8 @@ struct WheelSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            PresetsSection(model: presets, prefs: prefs)
 
             Section {
                 Toggle(isOn: $prefs.ordersByUsage) {
@@ -137,6 +143,7 @@ struct WheelSettingsView: View {
         .onChange(of: mode) { refresh(replay: true) }
         .onChange(of: prefs.hidden) { refresh(replay: false) }
         .onChange(of: prefs.ordersByUsage) { refresh(replay: false) }
+        .onChange(of: presets.version) { refresh(replay: false) }
     }
 
     /// The real wheel, scaled down so the ring and its mode chip fill the space.
@@ -154,7 +161,7 @@ struct WheelSettingsView: View {
     @ViewBuilder
     private var toggles: some View {
         if actions.isEmpty {
-            Label("No \(mode == .convert ? "conversions" : "tools") for \(group.title.lowercased())", systemImage: "nosign")
+            Label("No \(Self.noun(mode)) for \(group.title.lowercased())", systemImage: "nosign")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.secondaryText(scheme))
                 .frame(maxWidth: .infinity, minHeight: 80)
@@ -172,6 +179,14 @@ struct WheelSettingsView: View {
                     }
                 }
             }
+        }
+    }
+
+    private static func noun(_ mode: WheelMode) -> String {
+        switch mode {
+        case .convert: "conversions"
+        case .tools: "tools"
+        case .files: "file actions"
         }
     }
 
@@ -236,7 +251,7 @@ private struct SliceToggle: View {
     var body: some View {
         Toggle(isOn: $isOn) {
             HStack(spacing: 5) {
-                if mode == .tools, let symbol = action.symbol {
+                if mode != .convert || action.isPreset, let symbol = action.symbol {
                     Image(systemName: symbol)
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundStyle(isOn ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
@@ -286,5 +301,174 @@ private struct SliceToggle: View {
             .animation(Theme.ease, value: hovering)
             .accessibilityValue(configuration.isOn ? "Shown" : "Hidden")
         }
+    }
+}
+
+// MARK: - Presets
+
+/// The presets as Settings shows them, refreshed whenever they change (here, in a sheet, or from the CLI).
+@MainActor
+final class PresetsModel: ObservableObject {
+    @Published private(set) var snapshot = PresetStore.shared.snapshot
+    /// Bumped on every reload so the preview wheel can follow.
+    @Published private(set) var version = 0
+    @Published var error: String?
+    private var observers: [NSObjectProtocol] = []
+
+    init() {
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: PresetStore.didChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reload() }
+        })
+        // Picks up `--save-preset` from a terminal when Settings comes back to the front.
+        observers.append(center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reload() }
+        })
+    }
+
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+
+    func reload() {
+        snapshot = PresetStore.shared.snapshot
+        version += 1
+    }
+
+    func perform(_ change: () throws -> Void) {
+        do {
+            try change()
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+        reload()
+    }
+
+    /// "Resize · 25%": the action and its saved values, for the row under each name.
+    static func summary(_ preset: Preset) -> String {
+        let base = ActionRegistry.all.first { $0.id == preset.action }
+        let title = base.map { $0.mode == .convert ? "Convert to \($0.title)" : $0.title } ?? preset.action
+        let values = (base?.parameters ?? []).compactMap { parameter -> String? in
+            guard let value = preset.values[parameter.key], !value.isEmpty else { return nil }
+            if case .number(_, let unit) = parameter.kind { return "\(value) \(unit)" }
+            if case .text = parameter.kind { return "\(parameter.label): \(value)" }
+            return value
+        }
+        return ([title] + values).joined(separator: " · ")
+    }
+}
+
+/// Settings › Wheel › Presets: rename, reorder, hide and delete. Presets are made from a tool's settings sheet
+/// (Save as Preset…) or with `--save-preset`.
+private struct PresetsSection: View {
+    @ObservedObject var model: PresetsModel
+    @ObservedObject var prefs: WheelPrefs
+    @State private var drafts: [String: String] = [:]
+    @FocusState private var focused: String?
+    @Environment(\.colorScheme) private var scheme
+
+    private var count: Int { model.snapshot.presets.count }
+
+    var body: some View {
+        Section {
+            if count == 0 {
+                Label("No presets yet. In a tool's settings, choose Save as Preset… and it becomes a slice of its own.",
+                      systemImage: "bookmark")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.secondaryText(scheme))
+            } else {
+                rows
+            }
+            if let error = model.error ?? model.snapshot.readError {
+                Label(error, systemImage: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Theme.cherryText)
+            }
+        } header: {
+            Text("Presets")
+        }
+        .onChange(of: focused) { previous, _ in
+            if let previous { commit(previous) } // leaving a name field saves it, like Return
+        }
+    }
+
+    @ViewBuilder
+    private var rows: some View {
+        let list = VStack(spacing: 6) {
+            ForEach(Array(model.snapshot.presets.enumerated()), id: \.element.id) { index, preset in
+                row(preset, index: index)
+            }
+        }
+        if count > 4 {
+            ScrollView { list.padding(.vertical, 2) }.frame(height: 4 * 44)
+        } else {
+            list
+        }
+    }
+
+    private func row(_ preset: Preset, index: Int) -> some View {
+        let valid = model.snapshot.valid.first { $0.preset.id == preset.id }
+        let problem = model.snapshot.problems.first { $0.preset.id == preset.id }
+        let shown = !prefs.hidden.contains(preset.id)
+        return HStack(spacing: 8) {
+            Image(systemName: problem != nil ? "exclamationmark.triangle.fill" : valid?.action.symbol ?? "bookmark.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(problem != nil ? AnyShapeStyle(Theme.cherryText) : AnyShapeStyle(Theme.accent))
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                TextField("Name", text: Binding(get: { drafts[preset.id] ?? preset.name },
+                                                set: { drafts[preset.id] = $0 }))
+                    .textFieldStyle(.plain)
+                    .labelsHidden()
+                    .font(.system(size: 12.5, weight: .medium))
+                    .focused($focused, equals: preset.id)
+                    .onSubmit { commit(preset.id) }
+                    .uiTestID("presets.name.\(preset.id)")
+                Text(problem.map { "Skipped: \($0.reason)" } ?? PresetsModel.summary(preset))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(problem != nil ? AnyShapeStyle(Theme.cherryText) : AnyShapeStyle(Theme.secondaryText(scheme)))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 4)
+            if problem == nil {
+                Button { withAnimation(Theme.snappy) { prefs.setShown(!shown, preset.id) } } label: {
+                    Image(systemName: shown ? "eye" : "eye.slash")
+                }
+                .help(shown ? "Hide from the wheel" : "Show on the wheel")
+                .accessibilityLabel(shown ? "Hide \(preset.name) from the wheel" : "Show \(preset.name) on the wheel")
+                .uiTestID("presets.shown.\(preset.id)")
+            }
+            Button { move(preset.id, by: -1) } label: { Image(systemName: "chevron.up") }
+                .disabled(index == 0)
+                .help("Move up")
+                .accessibilityLabel("Move \(preset.name) up")
+                .uiTestID("presets.up.\(preset.id)")
+            Button { move(preset.id, by: 1) } label: { Image(systemName: "chevron.down") }
+                .disabled(index == count - 1)
+                .help("Move down")
+                .accessibilityLabel("Move \(preset.name) down")
+                .uiTestID("presets.down.\(preset.id)")
+            Button { withAnimation(Theme.snappy) { model.perform { try PresetStore.shared.delete(preset.id) } } } label: {
+                Image(systemName: "trash")
+            }
+            .help("Delete preset")
+            .accessibilityLabel("Delete \(preset.name)")
+            .uiTestID("presets.delete.\(preset.id)")
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .opacity(shown || problem != nil ? 1 : 0.6)
+        .frame(minHeight: 38)
+    }
+
+    private func move(_ id: String, by offset: Int) {
+        withAnimation(Theme.snappy) { model.perform { try PresetStore.shared.move(id, by: offset) } }
+    }
+
+    /// Saves a changed name; a rejected one (empty, taken) snaps back and says why.
+    private func commit(_ id: String) {
+        guard let draft = drafts.removeValue(forKey: id),
+              let preset = model.snapshot.presets.first(where: { $0.id == id }), draft != preset.name else { return }
+        model.perform { try PresetStore.shared.rename(id, to: draft) }
     }
 }

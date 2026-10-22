@@ -14,6 +14,8 @@ final class RunningJob: ObservableObject {
     /// nil shows an indeterminate bar.
     @Published var progress: Double?
     @Published var state: State = .running
+    /// A copied value (path, hash) shown on the finished card.
+    @Published var result: String?
     /// Set once a finished job's files are in history: moves them to the Trash.
     @Published var undo: (() -> Void)?
     @Published var undone = false
@@ -49,7 +51,7 @@ final class JobRunner {
     }
 
     static func title(for action: Action) -> String {
-        action.mode == .convert ? "Convert to \(action.title)" : action.title
+        action.mode == .convert && !action.isPreset ? "Convert to \(action.title)" : action.title
     }
 
     func execute(_ action: Action, urls: [URL], params: ParamValues) {
@@ -84,6 +86,16 @@ final class JobRunner {
             for (title, body) in report.texts {
                 ResultWindow.show(title: title, body: body)
             }
+            // File actions: values go to the clipboard and onto the card; messages replace the file name.
+            if !report.values.isEmpty {
+                let value = report.values.joined(separator: "\n")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(value, forType: .string)
+                job.result = value
+                job.detail = "Copied to the clipboard"
+            } else if !report.messages.isEmpty {
+                job.detail = report.messages.joined(separator: " · ")
+            }
             if !report.files.isEmpty {
                 let entry = HistoryStore.shared.record(action, inputs: urls, outputs: report.files)
                 job.undo = { [weak job] in
@@ -107,8 +119,8 @@ final class JobRunner {
             if report.failures.isEmpty {
                 job.progress = 1
                 job.state = .done
-                // Long enough to reach Undo (or read why nothing was written); hovering the card keeps it open.
-                panel.close(after: job.undo != nil ? 5 : note != nil ? 4 : 1.2)
+                // Long enough to reach Undo, read a copied value, or see why nothing was written; hovering keeps it open.
+                panel.close(after: job.undo != nil || job.result != nil ? 5 : note != nil ? 4 : report.messages.isEmpty ? 1.2 : 2.5)
             } else {
                 job.state = .failed(report.failures.map(\.message).joined(separator: "\n"))
             }

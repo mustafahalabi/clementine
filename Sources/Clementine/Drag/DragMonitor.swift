@@ -1,6 +1,6 @@
 import AppKit
 
-/// Notices file drags in other apps (Finder, Desktop…) and whether ⇧ / ⌥⇧ is held.
+/// Notices file drags in other apps (Finder, Desktop…) and whether ⇧ / ⌥⇧ / ⌃ is held.
 ///
 /// Global mouse-down monitoring needs no special permission. While the button is held we poll
 /// the shared drag pasteboard: its change count bumps when a drag session starts.
@@ -19,6 +19,12 @@ final class DragMonitor {
     private var baseline = 0
     private var draggedURLs: [URL]?
     private var mode: WheelMode?
+    /// When ⌃ (without ⇧) went down during this drag.
+    private var controlSince: Date?
+
+    /// ⌃←/⌃→ switch Spaces mid-drag, so ⌃ has to be held a moment before the file actions wheel opens; a quick
+    /// ⌃-arrow to carry a file to another desktop then doesn't flash a wheel.
+    static let controlHold: TimeInterval = 0.25
 
     func start() {
         monitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
@@ -30,6 +36,7 @@ final class DragMonitor {
         baseline = NSPasteboard(name: .drag).changeCount
         draggedURLs = nil
         mode = nil
+        controlSince = nil
         timer?.invalidate()
         let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -62,8 +69,7 @@ final class DragMonitor {
         guard let urls = draggedURLs, Prefs.enabled else { return }
 
         let flags = NSEvent.modifierFlags
-        guard flags.contains(.shift) else { return } // releasing ⇧ keeps the wheel that's already up
-        let wanted: WheelMode = flags.contains(.option) ? .tools : .convert
+        guard let wanted = wheel(for: flags) else { return } // letting go of the keys keeps the wheel that's up
         if mode == nil {
             mode = wanted
             handler(.began(urls, wanted))
@@ -71,5 +77,22 @@ final class DragMonitor {
             mode = wanted
             handler(.modeChanged(wanted))
         }
+    }
+
+    /// ⇧ (with ⌥ for tools) wins over ⌃, so ⌃⇧ is still the convert wheel. ⌘ means "move" in Finder; ⌃ is ignored
+    /// alongside it.
+    /// Internal (not private) so the UI tests can check the rules with made-up flags and times.
+    func wheel(for flags: NSEvent.ModifierFlags, now: Date = Date()) -> WheelMode? {
+        if flags.contains(.shift) {
+            controlSince = nil
+            return flags.contains(.option) ? .tools : .convert
+        }
+        guard flags.contains(.control), !flags.contains(.command), Prefs.controlWheel else {
+            controlSince = nil
+            return nil
+        }
+        let since = controlSince ?? now
+        controlSince = since
+        return now.timeIntervalSince(since) >= Self.controlHold ? .files : nil
     }
 }
