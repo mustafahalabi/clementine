@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — unreleased
+## 0.2.0 — 2026-10-23
 
 New tools, a third wheel, Shortcuts, and better results on everyday phone video. Apple silicon, macOS 14 or later.
 
@@ -96,8 +96,6 @@ calmer first run. Apple silicon, macOS 14 or later.
   the wheel's decorative motion.
 - The image wheel's OCR slice is labelled "Text (OCR)"; slices and the wheel have VoiceOver labels, and job results
   are announced.
-
-**Project**
 
 **Project**
 - README rewritten as a product page with renders of every wheel and editor, in light and dark.
