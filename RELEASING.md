@@ -116,6 +116,10 @@ installs can never be updated again**; if it leaks, anyone can ship them an upda
    grep -o 'url="[^"]*"' ~/clementine-updates/appcast.xml   # check each points at the right tag
    ```
 
+   Do the same for `sparkle:releaseNotesLink`: point each version's notes at its own tag
+   (`…/releases/download/v0.1.1/Clementine-0.1.1.html`), not `…/releases/latest/download/…`, which stops
+   resolving for older notes as soon as a newer release is published. Attach the new `.html` to the release.
+
    Editing the URL doesn't affect the EdDSA signature (it covers the archive, not the feed). After publishing,
    `curl -sIL` each enclosure URL and expect a 200.
 
@@ -134,7 +138,7 @@ installs can never be updated again**; if it leaks, anyone can ship them an upda
    ```sh
    git tag v0.2.0 && git push origin v0.2.0
    gh release create v0.2.0 dist/Clementine-0.2.0.dmg dist/Clementine-0.2.0.zip dist/Clementine-0.2.0.sha256 \
-     ~/clementine-updates/appcast.xml --title "Clementine 0.2.0" --notes-file notes.md
+     ~/clementine-updates/appcast.xml ~/clementine-updates/Clementine-0.2.0.html ~/clementine-updates/*.delta --title "Clementine 0.2.0" --notes-file notes.md
    ```
 
    To add the checksums to a release that's already published (v0.1.0 shipped without them):

@@ -8,7 +8,7 @@ file, so keep everything here.
 A macOS menu bar app, modelled on "Tangerine": hold **⇧** while dragging a file and a wheel of output formats
 appears under the pointer; **⌥⇧** shows tools for that kind of file. Drop on a slice and the result is written
 next to the original. Everything runs locally. Owner: Mustafa Halabi (GitHub `mustafahalabi`). Public repo:
-https://github.com/mustafahalabi/clementine. Latest release: **v0.1.1** (2026-10-22), signed and notarized; 0.1.0 installs update to it through Sparkle (verified, delta update). When releasing, fix the old appcast URLs (RELEASING.md step 3).
+https://github.com/mustafahalabi/clementine. Latest release: **v0.2.0** (2026-10-23), signed and notarized; earlier installs update to it through Sparkle. When releasing, fix the old appcast URLs (RELEASING.md step 3).
 
 | Doc | Read it for |
 | --- | --- |
@@ -41,7 +41,7 @@ Everything planned for v0.1.0 is built, merged to `main`, tested and released: c
 click-mode wheel and Services, history/undo, wheel customization, parallel batches, welcome tour, bundled tools,
 Sparkle updates, CI. Every feature was also driven live on the build Mac with real mouse and keyboard input.
 
-0.2.0 (on `main`, not yet released): Cut Out Subject, presets, the ⌃ file actions wheel, Shortcuts actions, GIF
+0.2.0 (released 2026-10-23): Cut Out Subject, presets, the ⌃ file actions wheel, Shortcuts actions, GIF
 options, HDR tone-mapping, VideoToolbox, portrait Join, streaming Images → PDF / PDF → images, Compress keeps
 smaller originals, atomic outputs, Sparkle gentle reminders. See CHANGELOG.md.
 
